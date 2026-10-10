@@ -1,5 +1,10 @@
-# Ahead-of-time compile this app's own code (startup, month paging, views) on install;
-# AGP merges these rules with the profiles shipped by Compose and the other libraries.
-# Measured on the Xiaomi (60 Hz): month swiping 90th/99th-percentile frames went from 24/46 ms to 19/26 ms.
+# Ahead-of-time compile on install. AGP merges these rules with the profiles that Compose and
+# the other libraries ship, and rewrites them for R8's renamed classes.
+#
+# The library profiles cover startup but not all of paging: on the Xiaomi the first swipes after
+# launch still produced ~44 ms p90 frames until everything was compiled (14 ms). Compiling the
+# whole Compose stack plus this app's own code closes that gap for a small app like this one.
 Lcom/example/samsungcalendarclone/**;
 HSPLcom/example/samsungcalendarclone/**;->**(**)**
+Landroidx/compose/**;
+HSPLandroidx/compose/**;->**(**)**

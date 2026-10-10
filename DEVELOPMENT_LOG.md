@@ -470,3 +470,19 @@ Next: the end-to-end reminder check once the owner agrees.
 
 - Build OK; lint 0 errors, 12 warnings (version notices); JVM tests passed; Xiaomi full suite
   **OK (59 tests)** (57 run, 2 opt-in reminder checks skipped).
+
+## 2026-10-10 — First-swipe smoothness and the owner's pre-load idea (Claude Code)
+
+- Owner: smoother, but suggested pre-loading 1–2 months so the first swipes are smooth too.
+- New measurement: cold start, wait, two quick forward swipes, 6 runs (`gfxinfo` p90 per run).
+  - One month each side, app-only profile: p90 40–85 ms (mean ~61 ms).
+  - Two months each side: mean ~53 ms; swiping 7 s after launch instead of 2.5 s: steady ~44 ms,
+    so the cost was not startup overlap.
+  - Same build fully AOT-compiled: ~14 ms. Cause: library paging/animation code not in the
+    bundled profiles, so it ran interpreted/JIT on first use.
+- Fix: `baseline-prof.txt` now also covers `androidx/compose/**`. First swipes: mean p90 ~23 ms
+  with two months each side and ~18 ms with one; steady state p90/p99 13/24 ms (was 19/26).
+  Cold start 170–233 ms with one month vs 259–345 ms measured with two. Kept one month
+  (`PREFETCH_MONTHS = 1`), with the measurements noted in code.
+- Verification: JVM tests passed; lint 0 errors, 12 warnings; Xiaomi **OK (59 tests)** (2 opt-in
+  skipped). Optimized build reinstalled and profile-compiled for the owner.

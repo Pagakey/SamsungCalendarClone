@@ -380,7 +380,7 @@ private fun MonthContent(state: MonthUiState, compact: Boolean, wide: Boolean, m
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
         }
         // Neighbouring months stay composed, so a swipe never has to build a page mid-gesture.
-        HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth().testTag("month-pager"), beyondViewportPageCount = 1) { page ->
+        HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth().testTag("month-pager"), beyondViewportPageCount = PREFETCH_MONTHS) { page ->
             val month = anchor.plusMonths((page - 1200).toLong())
             MonthGrid(month, state.events, state.selectedDate, state.today, Modifier.fillMaxSize(), onSelect = model::select)
         }

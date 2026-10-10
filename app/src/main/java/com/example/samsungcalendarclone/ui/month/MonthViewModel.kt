@@ -53,12 +53,18 @@ data class MonthUiState(
     val loadedDates: List<LocalDate> get() =
         if (view == CalendarView.AGENDA) List(agendaDays) { selectedDate.plusDays(it.toLong()) } else {
             // The neighbouring months too, so a page swiped into view already shows its events.
-            val first = monthDates(month.minusMonths(1)).first()
-            val last = monthDates(month.plusMonths(1)).last()
+            val first = monthDates(month.minusMonths(PREFETCH_MONTHS.toLong())).first()
+            val last = monthDates(month.plusMonths(PREFETCH_MONTHS.toLong())).last()
             List((last.toEpochDay() - first.toEpochDay() + 1).toInt()) { first.plusDays(it.toLong()) }
         }
 }
 
+/**
+ * Months kept built and loaded on each side of the visible one, so a swipe lands on a ready page.
+ * Two were measured on the Xiaomi and were no smoother than one once the baseline profile
+ * compiled the paging code, while costing startup time.
+ */
+const val PREFETCH_MONTHS = 1
 const val AGENDA_STEP_DAYS = 56
 const val AGENDA_MAX_DAYS = 366
 const val SEARCH_LIMIT = 200

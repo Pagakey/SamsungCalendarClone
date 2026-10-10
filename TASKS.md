@@ -49,7 +49,8 @@ next: see the widgets on a real home screen, then the release-readiness items. A
 - [ ] Refine localization, locale time formatting and RTL behavior; extract UI strings.
 - [x] Measure month swiping on the Xiaomi (16 adb swipes, `dumpsys gfxinfo`, owner's real calendar): debug build p90/p99 150/250 ms; optimized build 24/46 ms; with the app baseline profile 19/26 ms (fully AOT 14/24 ms).
 - [x] Smoother month paging: neighbouring months pre-composed and pre-loaded, month cells skip unrelated state changes, one row-height measurement per page, event grouping off the main thread, app baseline profile.
-- [ ] Generate a measured baseline profile with a Macrobenchmark module instead of the app-wide wildcard rule.
+- [x] First swipes after launch: measured (cold start, two quick swipes, 6 runs). Uncompiled library paging code caused ~44–60 ms p90 frames; a baseline profile covering Compose brought them to ~18 ms and steady-state swiping to p90/p99 13/24 ms. Pre-loading two months each side (owner's idea) was tested and not better than one.
+- [ ] Optional: generate a measured baseline profile with a Macrobenchmark module instead of wildcard rules.
 
 ## Milestone 2 — Calendar Provider
 
