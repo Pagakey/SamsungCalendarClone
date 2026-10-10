@@ -78,6 +78,23 @@ class CalendarScreenTest {
             assertEquals(next, YearMonth.from(LocalDate.ofEpochDay(saved.get<Long>("selected_date")!!)))
         }
     }
+    @Test fun midnightMovesTodayAndASelectionThatWasOnIt() {
+        val model = launch()
+        val tomorrow = LocalDate.now().plusDays(1)
+        compose.runOnIdle { model.onClockChanged(tomorrow) }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertEquals(tomorrow, model.state.value.today)
+            assertEquals(tomorrow, model.state.value.selectedDate)
+        }
+        compose.onNodeWithText(tomorrow.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).assertIsDisplayed()
+    }
+    @Test fun midnightKeepsAnotherSelectedDay() {
+        val model = launch()
+        val chosen = LocalDate.now().withDayOfMonth(if (LocalDate.now().dayOfMonth == 15) 16 else 15)
+        compose.runOnIdle { model.select(chosen); model.onClockChanged(LocalDate.now().plusDays(1)) }
+        compose.runOnIdle { assertEquals(chosen, model.state.value.selectedDate) }
+    }
     @Test fun horizontalSwipeMovesMonth() {
         launch()
         compose.onNodeWithTag("month-pager").performTouchInput { swipeLeft() }

@@ -9,7 +9,7 @@ it was planned, partially scaffolded, or delegated to the device calendar app.
 
 Current checkpoint: **process-death recovery and lifecycle-safe saves**, on top of
 repeating-event scopes, reminder controls and native details/editing, verified on Xiaomi.
-Next: midnight refresh, then Milestone 4 views (day, week, agenda, search). Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
+Midnight/clock-change refresh is in. Next: Milestone 4 views (day, week, agenda, search). Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
 
 ## Project foundation
 
@@ -40,7 +40,8 @@ Next: midnight refresh, then Milestone 4 views (day, week, agenda, search). Adva
 - [ ] Verify landscape, split-screen and tablet layouts on devices/emulators.
 - [ ] Verify large fonts, TalkBack, contrast and touch-target accessibility.
 - [x] Preserve visible month/selected date through process death (verified with a real `am kill` on Xiaomi).
-- [ ] Refresh today automatically at midnight while the app stays foregrounded.
+- [x] Refresh today automatically at midnight while the app stays foregrounded (also on time/zone/date-change broadcasts).
+- [ ] Device-check a real midnight crossing or manual clock change (covered by unit/UI tests calling the same entry point).
 - [ ] Refine localization, locale time formatting and RTL behavior; extract UI strings.
 - [ ] Measure scrolling/swiping performance with a dense calendar.
 
@@ -137,8 +138,8 @@ Next: midnight refresh, then Milestone 4 views (day, week, agenda, search). Adva
 - [x] Add leap-February, Sunday/Monday starts and both year-boundary date tests.
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
-- [x] Run all 27 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE and the starter test).
-- [x] Run all 39 Xiaomi instrumented tests successfully (17 provider, 5 month, 4 details, 10 editor, 2 saved-state and the starter test).
+- [x] Run all 30 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock and the starter test).
+- [x] Run all 41 Xiaomi instrumented tests successfully (17 provider, 7 month, 4 details, 10 editor, 2 saved-state and the starter test).
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.

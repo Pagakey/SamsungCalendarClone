@@ -258,3 +258,17 @@ lifecycle-safe editor/navigation restoration.
 - Provider tests used only temporary UUID LOCAL calendars, deleted and asserted gone.
 
 Next: refresh "today" at midnight while the app is open, then the day/week/agenda views.
+
+## 2026-10-10 — Midnight and clock-change refresh (Claude Code)
+
+- "Today" was only recomputed on resume, so an app left open past midnight kept the old
+  today marker. `MonthViewModel.startClock()` now waits until the next local midnight
+  (`domain/model/Clock.kt`, DST-aware) and calls `onClockChanged()`; `MainActivity`
+  starts it in `onStart`, stops it in `onStop`, and also listens for date, time and
+  time-zone change broadcasts while visible. A selection resting on the old today follows
+  it; other selections stay. A zone change regroups events.
+- Verification: build/lint as before (0 errors, 19 warnings); 30 JVM tests (3 new clock
+  tests incl. 23/25-hour DST days); Xiaomi **OK (41 tests)** including 2 new UI tests that
+  drive `onClockChanged`. A real midnight crossing on the device is still unchecked.
+
+Next: Milestone 4 — day, week and agenda views with shared navigation, then search.

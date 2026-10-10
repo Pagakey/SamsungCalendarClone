@@ -13,6 +13,8 @@ import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
 import com.example.samsungcalendarclone.domain.model.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import java.time.ZonedDateTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -65,6 +67,30 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
     }
     private var observer: Job? = null
     private var query: Job? = null
+    private var clock: Job? = null
+
+    /** Keeps "today" current while the screen is visible: at each local midnight, and on demand after clock changes. */
+    fun startClock() {
+        clock?.cancel()
+        clock = viewModelScope.launch {
+            while (true) {
+                delay(untilNextDay(ZonedDateTime.now()).toMillis() + 500)
+                onClockChanged()
+            }
+        }
+    }
+
+    fun stopClock() { clock?.cancel(); clock = null }
+
+    /** A selection resting on the old "today" follows the date forward; any other selection stays put. */
+    fun onClockChanged(now: LocalDate = LocalDate.now(), zone: ZoneId = ZoneId.systemDefault()) {
+        val before = _state.value
+        if (before.today == now && before.zone == zone) return
+        _state.update { it.copy(today = now, zone = zone) }
+        if (before.selectedDate == before.today) select(now)
+        // Timed events are grouped by local date, so a new zone regroups them.
+        refresh()
+    }
 
     fun refreshPermissions() {
         fun allowed(permission: String) = ContextCompat.checkSelfPermission(getApplication(), permission) == PackageManager.PERMISSION_GRANTED
