@@ -20,6 +20,8 @@ running Android 16. The larger feature roadmap is still in progress.
 - Native editing and confirmed deletion of writable, non-repeating events, with stale-change protection.
 - Reminder controls in the editor (preset times, per-calendar limits), saved atomically with the event.
 - Repeating events: edit or delete this event, this and following events, or all events.
+- The visible month, open event and unsaved edits survive the app being closed in the background;
+  saves keep running through rotation and are safe to retry.
 - Explicit device-calendar handoff for repeat-rule changes and series this app can't change safely.
 
 Editing the repeat rule itself, additional views, search, notifications and widgets
@@ -75,7 +77,7 @@ local calendars; they do not create events in personal accounts.
 For a test run that preserves the installation, see the manual ADB workflow in
 [the native event checkpoint](docs/NATIVE_EVENT_CHECKPOINT.md).
 
-Last verified on 2026-10-10: **27 JVM tests and 31 device tests passed**;
+Last verified on 2026-10-10: **27 JVM tests and 39 device tests passed**;
 `assembleDebug` and `lintDebug` passed with zero lint errors and 19 warnings.
 
 Reports are generated under `app/build/reports/`; machine outputs are ignored by Git.

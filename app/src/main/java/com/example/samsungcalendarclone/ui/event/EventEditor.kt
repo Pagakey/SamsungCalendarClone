@@ -19,14 +19,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.samsungcalendarclone.domain.model.*
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+import java.util.UUID
 import java.time.*
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () -> Unit, onSave: suspend (NewEvent) -> Unit, initial: NewEvent? = null,
-                allDayLocked: Boolean = false) {
+fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () -> Unit, onSave: (NewEvent) -> Unit, initial: NewEvent? = null,
+                allDayLocked: Boolean = false, saving: Boolean = false, saveError: String? = null) {
     val zone = remember(initial?.zone) { ZoneId.of(initial?.zone ?: ZoneId.systemDefault().id) }
     val dateZone = if (initial?.allDay == true) ZoneOffset.UTC else zone
     val initialStart = initial?.let { Instant.ofEpochMilli(it.begin).atZone(dateZone) }
@@ -45,11 +44,11 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
     }
     var reminders by rememberSaveable(saver = reminderListSaver) { mutableStateOf(initialReminders) }
     var showReminderPresets by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    // Identifies this draft's event, so saving it again after a restart can't create a duplicate.
+    val draftUid = rememberSaveable { UUID.randomUUID().toString() }
     var showCalendars by remember { mutableStateOf(false) }
-    var confirmDiscard by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     LaunchedEffect(calendars) { if (initial == null && calendars.none { it.id == calendarId }) calendarId = calendars.firstOrNull()?.id }
     val dirty = title != initial?.title.orEmpty() || location != initial?.location.orEmpty() || notes != initial?.notes.orEmpty() ||
@@ -90,20 +89,13 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
                 if (times.isFailure) { error = times.exceptionOrNull()?.message; return }
                 val (begin, end) = times.getOrThrow()
                 if (end <= begin) { error = "End must be after start."; return }
-                saving = true
-                scope.launch {
-                    // A new event's reminders follow the calendar finally chosen; existing ones keep their methods.
-                    val saved = if (initial != null || calendar == null) reminders else reminders.map {
-                        if (calendar.allowedReminderMethods.isEmpty() || it.method in calendar.allowedReminderMethods) it
-                        else it.copy(method = calendar.newReminderMethod)
-                    }.distinct()
-                    try { onSave(NewEvent(title, id, begin.toEpochMilli(), end.toEpochMilli(), allDay, zone.id, location, notes, saved)) }
-                    catch (e: CancellationException) { throw e }
-                    catch (e: SecurityException) { error = "Calendar permission changed. Close this form and allow access in app settings." }
-                    catch (e: android.content.OperationApplicationException) { error = "This event changed elsewhere. Close and reopen it before saving." }
-                    catch (e: Exception) { error = "Couldn’t save this event. Check calendar access and try again." }
-                    finally { saving = false }
-                }
+                // A new event's reminders follow the calendar finally chosen; existing ones keep their methods.
+                val saved = if (initial != null || calendar == null) reminders else reminders.map {
+                    if (calendar.allowedReminderMethods.isEmpty() || it.method in calendar.allowedReminderMethods) it
+                    else it.copy(method = calendar.newReminderMethod)
+                }.distinct()
+                onSave(NewEvent(title, id, begin.toEpochMilli(), end.toEpochMilli(), allDay, zone.id, location, notes, saved,
+                    if (initial == null) draftUid else initial.uid))
             }
         }
     }
@@ -189,7 +181,7 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
                     Text(if (allDayLocked) "All-day can be changed for one event at a time. Repeat rules are changed through “Open in calendar app”."
                         else "Repeat options are available through “Open in calendar app” on the event details screen.",
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    (error ?: saveError)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Spacer(Modifier.height(24.dp))
                 }
             }

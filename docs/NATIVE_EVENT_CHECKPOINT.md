@@ -132,6 +132,25 @@ Files: `domain/model/Recurrence.kt` (new), `CalendarModels.kt`, `AndroidCalendar
 `MonthViewModel.kt`; tests `RecurrenceTest.kt` (new), `CalendarRepositoryTest.kt`, `EventDetailsTest.kt`.
 Result: 27 JVM tests and **OK (31 tests)** on the Xiaomi.
 
+## State restoration and lifecycle-safe saves (added later on 2026-10-10)
+
+- `MonthViewModel` takes a `SavedStateHandle` and stores the visible month and selected
+  date (`month`, `selected_date`); "today" is always recomputed.
+- `CalendarScreen` keeps the open occurrence and any `EditRequest` with `rememberSaveable`
+  savers in `ui/event/EventSaving.kt`. An edit keeps the snapshot it was opened with, so
+  stale-change detection still works after a restore. Details are reloaded from the provider.
+- Editor fields, reminders, errors and the discard dialog were already or are now saveable,
+  as are the details sheet's delete/scope dialogs.
+- All writes run in `viewModelScope` through `SaveState` (Idle/Running/Done/Failed), so a
+  rotation or theme change mid-save keeps the result and the Save guard.
+- Retries are safe: new events carry a draft `UID_2445` and `create` returns the existing
+  event for that UID; an update or delete whose snapshot no longer matches succeeds if the
+  row already holds the requested values (or is gone); a second exception for the same
+  occurrence is refused. User-facing refusals use `CalendarChangeRejected`.
+- Verified: 39 device tests (Bundle parcel round-trips, `StateRestorationTester` for the
+  editor draft and UID, restored month/date, retry behavior) and a real `am kill` on the
+  Xiaomi: the app came back on the navigated month and selected date in a new process.
+
 ## Remaining limitations
 
 - Existing events cannot yet move between calendars.

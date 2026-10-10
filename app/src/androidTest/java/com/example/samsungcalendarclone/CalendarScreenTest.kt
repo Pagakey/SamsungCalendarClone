@@ -11,6 +11,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.samsungcalendarclone.ui.month.CalendarScreen
 import com.example.samsungcalendarclone.ui.month.MonthViewModel
 import com.example.samsungcalendarclone.ui.theme.SamsungCalendarCloneTheme
+import androidx.lifecycle.SavedStateHandle
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,11 +25,12 @@ import java.util.Locale
 @RunWith(AndroidJUnit4::class)
 class CalendarScreenTest {
     @get:Rule val compose = createComposeRule()
-    private fun launch(dark: Boolean = false) {
+    private fun launch(dark: Boolean = false, saved: SavedStateHandle = SavedStateHandle()): MonthViewModel {
         val app = ApplicationProvider.getApplicationContext<Application>()
         // Default state intentionally has no permission/data, independent of device accounts.
-        val model = MonthViewModel(app)
+        val model = MonthViewModel(app, saved)
         compose.setContent { SamsungCalendarCloneTheme(darkTheme = dark) { CalendarScreen(model) } }
+        return model
     }
     private fun screenshot(name: String) {
         val app = ApplicationProvider.getApplicationContext<Application>()
@@ -56,6 +59,24 @@ class CalendarScreenTest {
         screenshot("month-dark-denied.png")
         compose.onNodeWithText("Calendars").performClick()
         compose.onNodeWithText("Calendar access is off. You can still browse dates.").assertIsDisplayed()
+    }
+    @Test fun restoredStateReopensSavedMonthAndDate() {
+        val date = LocalDate.of(2031, 2, 14)
+        launch(saved = SavedStateHandle(mapOf("month" to "2031-02", "selected_date" to date.toEpochDay())))
+        compose.onNodeWithText(date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())).assertIsDisplayed()
+        compose.onNodeWithText("2031").assertIsDisplayed()
+        compose.onNodeWithText(date.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).assertIsDisplayed()
+    }
+    @Test fun navigationIsRecordedForRestoration() {
+        val saved = SavedStateHandle()
+        launch(saved = saved)
+        compose.onNodeWithContentDescription("Next month").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            val next = YearMonth.now().plusMonths(1)
+            assertEquals(next.toString(), saved.get<String>("month"))
+            assertEquals(next, YearMonth.from(LocalDate.ofEpochDay(saved.get<Long>("selected_date")!!)))
+        }
     }
     @Test fun horizontalSwipeMovesMonth() {
         launch()

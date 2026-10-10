@@ -229,3 +229,32 @@ lifecycle-safe editor/navigation restoration.
 - (Resolved) The owner confirmed Pagakey should own the repository. Created private
   `https://github.com/Pagakey/SamsungCalendarClone` and pushed `main` with all three commits.
 - Next: editor/navigation recovery across process death, then day/week/agenda views.
+
+## 2026-10-10 — Process-death recovery and lifecycle-safe saves (Claude Code)
+
+### Problem and changes
+
+- The month, the open event and the editor lived in `remember`, and saves ran in the
+  editor's composition scope: a rotation mid-save lost the result, and process death lost
+  the navigation. A retried create could duplicate an event.
+- Added `SavedStateHandle` month/date to `MonthViewModel`; Bundle savers for the open
+  occurrence and `EditRequest` (`ui/event/EventSaving.kt`); writes moved to
+  `viewModelScope` behind a `SaveState` flow consumed by the screen, editor and details sheet.
+- Repository: draft `UID_2445` dedupe for create, idempotent retry of single update/delete,
+  refusal of a duplicate single-occurrence exception, and `CalendarChangeRejected` for
+  user-facing validation messages (a subclass of IllegalArgumentException).
+
+### Verification
+
+- `./gradlew assembleDebug assembleDebugAndroidTest testDebugUnitTest lintDebug`: BUILD
+  SUCCESSFUL; 27 JVM tests; lint 0 errors, 19 warnings (unchanged).
+- First full Xiaomi run: 33 of 39 passed; 6 consecutive Compose UI tests reported "No
+  compose hierarchies found" (the test activity didn't draw, likely while the phone was in
+  use or dozing). The same 9 screen/details tests then passed alone, and a second full run
+  was **OK (39 tests)**. Outputs: `app/build/reports/manual-device/restore-*.txt` (ignored).
+- Real process death: navigated two months ahead, pressed Home, `am kill`, relaunched;
+  a new process showed December 2026 with Thursday 10 Dec selected. Calendar permissions
+  were ungranted at the time, so no personal data was displayed; UI dumps were deleted.
+- Provider tests used only temporary UUID LOCAL calendars, deleted and asserted gone.
+
+Next: refresh "today" at midnight while the app is open, then the day/week/agenda views.

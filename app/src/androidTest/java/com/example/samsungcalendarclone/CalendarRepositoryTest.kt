@@ -12,6 +12,7 @@ import android.provider.CalendarContract.Reminders as Reminders
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
+import com.example.samsungcalendarclone.data.calendar.CalendarChangeRejected
 import com.example.samsungcalendarclone.domain.model.EventReminder
 import com.example.samsungcalendarclone.domain.model.NewEvent
 import com.example.samsungcalendarclone.domain.model.RecurrenceScope
@@ -311,6 +312,35 @@ class CalendarRepositoryTest {
             catch (_: OperationApplicationException) { }
         }
         assertEquals(List(3) { "External update" }, ours().map { it.title })
+    }
+
+    @Test fun retriedSavesDoNotDuplicateOrFail() = runBlocking {
+        val draft = draft().copy(uid = "fictional-${UUID.randomUUID()}", reminders = listOf(EventReminder(10, Reminders.METHOD_ALERT)))
+        val first = repository.create(draft)
+        assertEquals(first, repository.create(draft))
+        assertEquals(1, ours().size)
+        assertEquals(listOf(10 to Reminders.METHOD_ALERT), reminderRows(ContentUris.parseId(first)))
+        // An update retried from the same snapshot after it already landed succeeds without changes.
+        val original = repository.details(ContentUris.parseId(first))!!
+        val changed = original.event.copy(title = "Retried title", reminders = emptyList())
+        repository.update(original, changed)
+        repository.update(original, changed)
+        assertEquals("Retried title", repository.details(original.id)!!.event.title)
+        // A delete retried after it landed is not an error.
+        repository.delete(original.copy(event = changed.copy(title = "Retried title"), reminders = emptyList()))
+        repository.delete(original.copy(event = changed.copy(title = "Retried title"), reminders = emptyList()))
+        assertTrue(ours().isEmpty())
+    }
+
+    @Test fun retriedSingleOccurrenceChangeIsRejectedInsteadOfDuplicated() = runBlocking {
+        val id = series("FREQ=DAILY;COUNT=3", synced = true)
+        val occurrence = ours()[1]
+        val original = repository.details(id, occurrence)!!
+        val moved = original.event.copy(title = "Moved standup", begin = occurrence.begin, end = occurrence.end)
+        repository.updateOccurrences(original, occurrence, moved, RecurrenceScope.THIS)
+        try { repository.updateOccurrences(original, occurrence, moved, RecurrenceScope.THIS); fail("A second exception must be refused") }
+        catch (_: CalendarChangeRejected) { }
+        assertEquals(dump(), 3, ours().size)
     }
 
     @Test fun readOnlyCalendarRejectsWrites() = runBlocking {

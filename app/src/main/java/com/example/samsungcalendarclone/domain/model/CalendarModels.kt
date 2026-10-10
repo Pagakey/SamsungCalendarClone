@@ -65,6 +65,8 @@ data class NewEvent(
     val location: String,
     val notes: String,
     val reminders: List<EventReminder> = emptyList(),
+    /** iCalendar UID for a new event, so a retried save can find the event it already created. */
+    val uid: String? = null,
 )
 
 /** The stored event plus its calendar capabilities; recurring occurrences stay read-only here. */

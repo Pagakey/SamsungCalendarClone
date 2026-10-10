@@ -10,6 +10,8 @@ import com.example.samsungcalendarclone.domain.model.REMINDER_ALERT
 import com.example.samsungcalendarclone.ui.event.EventEditor
 import com.example.samsungcalendarclone.ui.theme.SamsungCalendarCloneTheme
 import org.junit.Assert.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,12 +22,40 @@ import java.time.LocalDate
 class EventEditorTest {
     @get:Rule val compose = createComposeRule()
     private var saved: NewEvent? = null
-    private fun editor(initial: NewEvent? = null, calendars: List<DeviceCalendar> = listOf(DeviceCalendar(1, "Test calendar", "Test account", 0, true))) {
-        compose.setContent {
-            SamsungCalendarCloneTheme {
-                EventEditor(LocalDate.of(2026, 10, 10), calendars, onDismiss = {}, onSave = { saved = it }, initial = initial)
-            }
+    private fun content(initial: NewEvent? = null, calendars: List<DeviceCalendar> = listOf(DeviceCalendar(1, "Test calendar", "Test account", 0, true)),
+                        saving: Boolean = false, saveError: String? = null): @Composable () -> Unit = {
+        SamsungCalendarCloneTheme {
+            EventEditor(LocalDate.of(2026, 10, 10), calendars, onDismiss = {}, onSave = { saved = it }, initial = initial,
+                saving = saving, saveError = saveError)
         }
+    }
+    private fun editor(initial: NewEvent? = null, calendars: List<DeviceCalendar> = listOf(DeviceCalendar(1, "Test calendar", "Test account", 0, true)),
+                       saving: Boolean = false, saveError: String? = null) {
+        compose.setContent(content(initial, calendars, saving, saveError))
+    }
+    @Test fun draftSurvivesStateRestorationWithTheSameEventUid() {
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent(content())
+        compose.onNodeWithText("Event title").performTextInput("Fictional review")
+        compose.onNodeWithContentDescription("Remove reminder 10 minutes before").performScrollTo().performClick()
+        compose.onNodeWithText("Add reminder").performScrollTo().performClick()
+        compose.onNodeWithText("1 hour before").performClick()
+        compose.onNodeWithText("Save").performClick()
+        val first = compose.runOnIdle { saved }
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("Fictional review").assertIsDisplayed()
+        compose.onNodeWithText("1 hour before").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle {
+            assertNotNull(first?.uid)
+            assertEquals(first, saved)
+            assertEquals(listOf(EventReminder(60, REMINDER_ALERT)), saved?.reminders)
+        }
+    }
+    @Test fun inFlightSaveDisablesSaveAndFailuresAreShown() {
+        editor(saving = true, saveError = "This event changed elsewhere. Close it and open it again.")
+        compose.onNodeWithText("Saving…").assertIsNotEnabled()
+        compose.onNodeWithText("This event changed elsewhere.", substring = true).performScrollTo().assertIsDisplayed()
     }
     @Test fun savesAllDayWithExclusiveUtcEnd() {
         editor()

@@ -3,6 +3,7 @@ package com.example.samsungcalendarclone.data.calendar
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.ContentProviderOperation
+import android.content.OperationApplicationException
 import android.provider.CalendarContract.Events as Events
 import android.provider.CalendarContract.Reminders as Reminders
 import com.example.samsungcalendarclone.domain.model.EventDetails
@@ -33,6 +34,12 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
+
+/** A change the app refuses with a message meant for the user, rather than a provider failure. */
+class CalendarChangeRejected(message: String) : IllegalArgumentException(message)
+
+private inline fun ensure(value: Boolean, message: () -> String) { if (!value) throw CalendarChangeRejected(message()) }
+private inline fun <T : Any> ensureNotNull(value: T?, message: () -> String): T = value ?: throw CalendarChangeRejected(message())
 
 class AndroidCalendarRepository(context: Context) {
     private val resolver = context.applicationContext.contentResolver
@@ -84,13 +91,16 @@ class AndroidCalendarRepository(context: Context) {
     }
 
     suspend fun create(event: NewEvent) = withContext(Dispatchers.IO) {
-        require(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }
-        require(event.title.isNotBlank()) { "Give your event a title." }
-        require(event.end > event.begin) { "End must be after start." }
-        val calendar = calendars(visibleOnly = false).find { it.id == event.calendarId && it.writable }
-        requireNotNull(calendar) { "This calendar is no longer writable." }
+        ensure(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }
+        ensure(event.title.isNotBlank()) { "Give your event a title." }
+        ensure(event.end > event.begin) { "End must be after start." }
+        val calendar = ensureNotNull(calendars(visibleOnly = false).find { it.id == event.calendarId && it.writable }) {
+            "This calendar is no longer writable."
+        }
         validateReminders(event.reminders, calendar)
         // One batch so the event and its reminders are saved together or not at all.
+        // A retried save (after a configuration change or process death) finds its own event by UID.
+        event.uid?.let { uid -> savedWithUid(event.calendarId, uid)?.let { return@withContext it } }
         val operations = arrayListOf(ContentProviderOperation.newInsert(Events.CONTENT_URI).withValues(event.values()).build())
         event.reminders.forEach { reminder ->
             operations += ContentProviderOperation.newInsert(Reminders.CONTENT_URI)
@@ -98,6 +108,10 @@ class AndroidCalendarRepository(context: Context) {
         }
         checkNotNull(resolver.applyBatch(CalendarContract.AUTHORITY, operations).firstOrNull()?.uri) { "The calendar could not save this event." }
     }
+
+    private fun savedWithUid(calendarId: Long, uid: String) = resolver.query(Events.CONTENT_URI, arrayOf(Events._ID),
+        "${Events.CALENDAR_ID} = ? AND ${Events.UID_2445} = ? AND ${Events.DELETED} = 0", arrayOf(calendarId.toString(), uid), null)
+        ?.use { if (it.moveToFirst()) ContentUris.withAppendedId(Events.CONTENT_URI, it.getLong(0)) else null }
 
     suspend fun details(id: Long, occurrence: CalendarEvent? = null): EventDetails? = withContext(Dispatchers.IO) {
         val uri = ContentUris.withAppendedId(Events.CONTENT_URI, id)
@@ -125,10 +139,10 @@ class AndroidCalendarRepository(context: Context) {
 
     suspend fun update(original: EventDetails, event: NewEvent) = withContext(Dispatchers.IO) {
         val calendar = validateEditable(original)
-        require(event.calendarId == original.event.calendarId) { "Moving an existing event to another calendar is not supported yet." }
-        require(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }
-        require(event.title.isNotBlank()) { "Give your event a title." }
-        require(event.end > event.begin) { "End must be after start." }
+        ensure(event.calendarId == original.event.calendarId) { "Moving an existing event to another calendar is not supported yet." }
+        ensure(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }
+        ensure(event.title.isNotBlank()) { "Give your event a title." }
+        ensure(event.end > event.begin) { "End must be after start." }
         val (selection, args) = unchangedSelection(original)
         // Match the snapshot atomically so external changes cannot be silently overwritten.
         val operations = arrayListOf(ContentProviderOperation.newUpdate(Events.CONTENT_URI)
@@ -138,7 +152,19 @@ class AndroidCalendarRepository(context: Context) {
             operations += replaceReminders(original, event.reminders)
         }
         // The provider applies a batch in one transaction, so a stale snapshot rolls back every row.
-        resolver.applyBatch(CalendarContract.AUTHORITY, operations)
+        try { resolver.applyBatch(CalendarContract.AUTHORITY, operations) }
+        catch (e: OperationApplicationException) {
+            // A retry of a save that already landed matches the requested values; anything else is a real conflict.
+            if (details(original.id)?.let { saved -> sameEditableFields(saved, event) } != true) throw e
+        }
+        Unit
+    }
+
+    private fun sameEditableFields(saved: EventDetails, event: NewEvent): Boolean {
+        val current = saved.event
+        return current.title == event.title.trim() && current.calendarId == event.calendarId && current.begin == event.begin &&
+            current.end == event.end && current.allDay == event.allDay && current.location == event.location &&
+            current.notes == event.notes && (event.allDay || current.zone == event.zone) && sameReminders(saved.reminders, event.reminders)
     }
 
     /** Asserts the loaded reminder rows are still current, then swaps them for [reminders]. */
@@ -162,13 +188,13 @@ class AndroidCalendarRepository(context: Context) {
     }
 
     private fun validateReminders(reminders: List<EventReminder>, calendar: DeviceCalendar, existing: List<EventReminder> = emptyList()) {
-        require(calendar.maxReminders <= 0 || reminders.size <= calendar.maxReminders) {
+        ensure(calendar.maxReminders <= 0 || reminders.size <= calendar.maxReminders) {
             "${calendar.name} allows at most ${calendar.maxReminders} reminders."
         }
-        require(reminders.all { it.minutes >= -1 }) { "Reminders must be at or before the start." }
+        ensure(reminders.all { it.minutes >= -1 }) { "Reminders must be at or before the start." }
         val allowed = calendar.allowedReminderMethods
         // Methods already on the event stay valid even when the calendar no longer offers them.
-        require(allowed.isEmpty() || reminders.all { it.method in allowed || existing.any { old -> old.method == it.method } }) {
+        ensure(allowed.isEmpty() || reminders.all { it.method in allowed || existing.any { old -> old.method == it.method } }) {
             "${calendar.name} doesn’t support this kind of reminder."
         }
     }
@@ -178,22 +204,24 @@ class AndroidCalendarRepository(context: Context) {
         val (selection, args) = unchangedSelection(original)
         val operation = ContentProviderOperation.newDelete(Events.CONTENT_URI)
             .withSelection(selection, args).withExpectedCount(1).build()
-        resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(operation))
+        try { resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(operation)) }
+        catch (e: OperationApplicationException) { if (details(original.id) != null) throw e }
+        Unit
     }
 
     /** Changes [scope] occurrences of a repeating event, starting from the opened [occurrence]. */
     suspend fun updateOccurrences(original: EventDetails, occurrence: CalendarEvent, event: NewEvent, scope: RecurrenceScope) = withContext(Dispatchers.IO) {
         val calendar = validateRecurring(original, scope)
-        require(event.calendarId == original.event.calendarId) { "Moving an existing event to another calendar is not supported yet." }
-        require(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }
-        require(event.title.isNotBlank()) { "Give your event a title." }
-        require(event.end > event.begin) { "End must be after start." }
+        ensure(event.calendarId == original.event.calendarId) { "Moving an existing event to another calendar is not supported yet." }
+        ensure(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }
+        ensure(event.title.isNotBlank()) { "Give your event a title." }
+        ensure(event.end > event.begin) { "End must be after start." }
         validateReminders(event.reminders, calendar, original.reminders)
         val effective = if (scope == RecurrenceScope.FOLLOWING && occurrence.begin == original.event.begin) RecurrenceScope.ALL else scope
         val operations = when {
             original.isException -> exceptionRowUpdate(original, event)
             effective == RecurrenceScope.THIS && !original.synced -> detachOccurrence(original, occurrence, event)
-            effective == RecurrenceScope.THIS -> newException(original, occurrence, event.values().apply {
+            effective == RecurrenceScope.THIS -> newException(original.also { ensureNoExceptionAt(it, occurrence) }, occurrence, event.values().apply {
                 // Exceptions inherit their calendar and take their end from a duration, like their series.
                 remove(Events.CALENDAR_ID)
                 remove(Events.DTEND)
@@ -216,7 +244,7 @@ class AndroidCalendarRepository(context: Context) {
                 .withSelection(exceptionSelection(original).first, exceptionSelection(original).second)
                 .withValue(Events.STATUS, Events.STATUS_CANCELED).withExpectedCount(1).build())
             effective == RecurrenceScope.THIS && !original.synced -> detachOccurrence(original, occurrence, null)
-            effective == RecurrenceScope.THIS -> newException(original, occurrence,
+            effective == RecurrenceScope.THIS -> newException(original.also { ensureNoExceptionAt(it, occurrence) }, occurrence,
                 ContentValues().apply { put(Events.STATUS, Events.STATUS_CANCELED) }, null)
             effective == RecurrenceScope.ALL -> listOf(ContentProviderOperation.newDelete(Events.CONTENT_URI)
                 .withSelection(series.first, series.second).withExpectedCount(1).build())
@@ -233,9 +261,15 @@ class AndroidCalendarRepository(context: Context) {
         resolver.applyBatch(CalendarContract.AUTHORITY, ArrayList(operations))
     }
 
+    /** A retried "this event" change must not add a second exception for the same occurrence. */
+    private fun ensureNoExceptionAt(original: EventDetails, occurrence: CalendarEvent) =
+        ensure(exceptionCount(original.id, from = occurrence.begin, until = occurrence.begin + 1) == 0) {
+            "This event was already changed. Close it and open it again."
+        }
+
     private suspend fun validateRecurring(original: EventDetails, scope: RecurrenceScope): DeviceCalendar {
-        require(scope in original.recurrenceScopes) { "Use the device calendar app to change this repeating event." }
-        return requireNotNull(calendars(visibleOnly = false).find { it.id == original.event.calendarId && it.writable }) {
+        ensure(scope in original.recurrenceScopes) { "Use the device calendar app to change this repeating event." }
+        return ensureNotNull(calendars(visibleOnly = false).find { it.id == original.event.calendarId && it.writable }) {
             "This calendar is read-only or no longer available."
         }
     }
@@ -292,9 +326,9 @@ class AndroidCalendarRepository(context: Context) {
     }
 
     private fun seriesUpdate(original: EventDetails, occurrence: CalendarEvent, event: NewEvent): List<ContentProviderOperation> {
-        require(event.allDay == original.event.allDay) { "Switch all-day on or off for one event at a time." }
+        ensure(event.allDay == original.event.allDay) { "Switch all-day on or off for one event at a time." }
         val timesChanged = event.begin != occurrence.begin || event.end != occurrence.end
-        require(!timesChanged || exceptionCount(original.id) == 0) {
+        ensure(!timesChanged || exceptionCount(original.id) == 0) {
             "Some events in this series were changed individually. Change the series times in your calendar app."
         }
         val begin = if (event.allDay) original.event.begin + (event.begin - occurrence.begin)
@@ -315,18 +349,18 @@ class AndroidCalendarRepository(context: Context) {
 
     /** Ends the series before [occurrence] and starts a new series there with the edited values. */
     private fun splitSeries(original: EventDetails, occurrence: CalendarEvent, event: NewEvent): List<ContentProviderOperation> {
-        require(event.allDay == original.event.allDay) { "Switch all-day on or off for one event at a time." }
+        ensure(event.allDay == original.event.allDay) { "Switch all-day on or off for one event at a time." }
         val rule = original.recurrence!!
-        require(exceptionCount(original.id, from = occurrence.begin) == 0) {
+        ensure(exceptionCount(original.id, from = occurrence.begin) == 0) {
             "Some later events in this series were changed individually. Change them in your calendar app."
         }
         val remaining = ruleCount(rule)?.let { count ->
-            val skipped = requireNotNull(exdatesBefore(original.exceptionDates, occurrence.begin)) {
+            val skipped = ensureNotNull(exdatesBefore(original.exceptionDates, occurrence.begin)) {
                 "This series skips some dates in a format this app can’t count. Change it in your calendar app."
             }
             count - instancesBefore(original, occurrence.begin) - exceptionCount(original.id, until = occurrence.begin) - skipped
         }
-        require(remaining == null || remaining > 0) { "This event is no longer part of its series. Reopen it and try again." }
+        ensure(remaining == null || remaining > 0) { "This event is no longer part of its series. Reopen it and try again." }
         val (selection, args) = seriesSelection(original)
         val copied = seriesExtras(original.id)
         val operations = mutableListOf(
@@ -418,8 +452,8 @@ class AndroidCalendarRepository(context: Context) {
     }
 
     private suspend fun validateEditable(original: EventDetails): DeviceCalendar {
-        require(!original.repeating) { "Use the device calendar app to change this repeating event." }
-        return requireNotNull(calendars(visibleOnly = false).find { it.id == original.event.calendarId && it.writable }) {
+        ensure(!original.repeating) { "Use the device calendar app to change this repeating event." }
+        return ensureNotNull(calendars(visibleOnly = false).find { it.id == original.event.calendarId && it.writable }) {
             "This calendar is read-only or no longer available."
         }
     }
@@ -445,6 +479,7 @@ class AndroidCalendarRepository(context: Context) {
         put(Events.EVENT_TIMEZONE, if (allDay) "UTC" else zone)
         put(Events.EVENT_LOCATION, location)
         put(Events.DESCRIPTION, notes)
+        uid?.let { put(Events.UID_2445, it) }
     }
 
     private fun EventReminder.values() = ContentValues().apply {

@@ -4,7 +4,10 @@ import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import android.content.OperationApplicationException
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
+import com.example.samsungcalendarclone.data.calendar.CalendarChangeRejected
 import androidx.lifecycle.viewModelScope
 import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
 import com.example.samsungcalendarclone.domain.model.*
@@ -32,12 +35,34 @@ data class MonthUiState(
     val error: String? = null,
 )
 
-class MonthViewModel(application: Application) : AndroidViewModel(application) {
+/** Progress of the one calendar write the UI can have in flight. */
+sealed interface SaveState {
+    data object Idle : SaveState
+    data object Running : SaveState
+    data class Done(val message: String) : SaveState
+    data class Failed(val message: String) : SaveState
+}
+
+class MonthViewModel(application: Application, private val saved: SavedStateHandle) : AndroidViewModel(application) {
     private val repository = AndroidCalendarRepository(application)
     private val preferences = application.getSharedPreferences("calendar_preferences", 0)
-    private val _state = MutableStateFlow(MonthUiState(hiddenCalendars = preferences.getStringSet("hidden", emptySet())
-        .orEmpty().mapNotNull { it.toLongOrNull() }.toSet()))
+    private val _state = MutableStateFlow(restoredState(MonthUiState(hiddenCalendars = preferences.getStringSet("hidden", emptySet())
+        .orEmpty().mapNotNull { it.toLongOrNull() }.toSet())))
     val state = _state.asStateFlow()
+    private val _save = MutableStateFlow<SaveState>(SaveState.Idle)
+    val save = _save.asStateFlow()
+
+    /** The visible month and selected date survive process death; "today" is always recomputed. */
+    private fun restoredState(initial: MonthUiState): MonthUiState {
+        val month = saved.get<String>(KEY_MONTH)?.let { runCatching { YearMonth.parse(it) }.getOrNull() } ?: return initial
+        val selected = saved.get<Long>(KEY_SELECTED)?.let { LocalDate.ofEpochDay(it) }?.takeIf { YearMonth.from(it) == month }
+        return initial.copy(month = month, selectedDate = selected ?: month.atDay(1))
+    }
+
+    private fun remember(state: MonthUiState) {
+        saved[KEY_MONTH] = state.month.toString()
+        saved[KEY_SELECTED] = state.selectedDate.toEpochDay()
+    }
     private var observer: Job? = null
     private var query: Job? = null
 
@@ -68,12 +93,14 @@ class MonthViewModel(application: Application) : AndroidViewModel(application) {
     fun showMonth(month: YearMonth) {
         if (month == _state.value.month) return
         _state.update { it.copy(month = month, selectedDate = month.atDay(minOf(it.selectedDate.dayOfMonth, month.lengthOfMonth())), events = emptyMap()) }
+        remember(_state.value)
         refresh()
     }
 
     fun select(date: LocalDate) {
         showMonth(YearMonth.from(date))
         _state.update { it.copy(selectedDate = date) }
+        remember(_state.value)
     }
 
     fun today() = select(LocalDate.now())
@@ -102,14 +129,39 @@ class MonthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun details(event: CalendarEvent) = repository.details(event.id, event)
-    suspend fun update(original: EventDetails, event: NewEvent) { repository.update(original, event); refresh() }
-    suspend fun delete(original: EventDetails) { repository.delete(original); refresh() }
-    suspend fun updateOccurrences(original: EventDetails, occurrence: CalendarEvent, event: NewEvent, scope: RecurrenceScope) {
-        repository.updateOccurrences(original, occurrence, event, scope); refresh()
-    }
-    suspend fun deleteOccurrences(original: EventDetails, occurrence: CalendarEvent, scope: RecurrenceScope) {
-        repository.deleteOccurrences(original, occurrence, scope); refresh()
+
+    // Writes run in the ViewModel so a rotation or theme change mid-save keeps its result.
+    fun create(event: NewEvent) = write("Event saved", SAVE_FAILED) { repository.create(event) }
+    fun update(original: EventDetails, event: NewEvent) = write("Event updated", SAVE_FAILED) { repository.update(original, event) }
+    fun delete(original: EventDetails) = write("Event deleted", DELETE_FAILED) { repository.delete(original) }
+    fun updateOccurrences(original: EventDetails, occurrence: CalendarEvent, event: NewEvent, scope: RecurrenceScope) =
+        write("Event updated", SAVE_FAILED) { repository.updateOccurrences(original, occurrence, event, scope) }
+    fun deleteOccurrences(original: EventDetails, occurrence: CalendarEvent, scope: RecurrenceScope) =
+        write("Event deleted", DELETE_FAILED) { repository.deleteOccurrences(original, occurrence, scope) }
+
+    /** Called once the UI has shown a result, or when the user dismisses a failed form. */
+    fun clearSave() { if (_save.value != SaveState.Running) _save.value = SaveState.Idle }
+
+    private fun write(done: String, failed: String, block: suspend () -> Unit) {
+        if (_save.value == SaveState.Running) return
+        _save.value = SaveState.Running
+        viewModelScope.launch {
+            _save.value = try {
+                block()
+                refresh()
+                SaveState.Done(done)
+            } catch (e: CancellationException) { throw e }
+            catch (e: SecurityException) { SaveState.Failed("Calendar permission changed. Close this and allow access in app settings.") }
+            catch (e: OperationApplicationException) { SaveState.Failed("This event changed elsewhere. Close it and open it again.") }
+            catch (e: CalendarChangeRejected) { SaveState.Failed(e.message ?: failed) }
+            catch (e: Exception) { SaveState.Failed(failed) }
+        }
     }
 
-    suspend fun create(event: NewEvent) { repository.create(event); refresh() }
+    private companion object {
+        const val KEY_MONTH = "month"
+        const val KEY_SELECTED = "selected_date"
+        const val SAVE_FAILED = "Couldn’t save this event. Check calendar access and try again."
+        const val DELETE_FAILED = "Couldn’t delete this event. Check calendar access and try again."
+    }
 }

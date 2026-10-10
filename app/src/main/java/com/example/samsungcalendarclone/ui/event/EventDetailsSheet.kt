@@ -21,8 +21,7 @@ import com.example.samsungcalendarclone.domain.model.RecurrenceScope
 import com.example.samsungcalendarclone.domain.model.reminderLabel
 import com.example.samsungcalendarclone.domain.model.reminderMethodLabel
 import com.example.samsungcalendarclone.ui.month.eventColor
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+import androidx.compose.runtime.saveable.rememberSaveable
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -40,15 +39,14 @@ fun EventDetailsSheet(
     onRetry: () -> Unit,
     onAllowEditing: () -> Unit,
     onEdit: (EventDetails, RecurrenceScope?) -> Unit,
-    onDelete: suspend (EventDetails, RecurrenceScope?) -> Unit,
+    onDelete: (EventDetails, RecurrenceScope?) -> Unit,
     onOpenExternal: () -> Unit,
+    deleting: Boolean = false,
+    deleteError: String? = null,
 ) {
-    var confirmDelete by remember { mutableStateOf(false) }
-    var chooseEditScope by remember { mutableStateOf(false) }
-    var scope by remember { mutableStateOf(RecurrenceScope.THIS) }
-    var deleting by remember { mutableStateOf(false) }
-    var deleteError by remember { mutableStateOf<String?>(null) }
-    val coroutines = rememberCoroutineScope()
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var chooseEditScope by rememberSaveable { mutableStateOf(false) }
+    var scope by rememberSaveable { mutableStateOf(RecurrenceScope.THIS) }
     ModalBottomSheet(onDismissRequest = { if (!deleting) onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().heightIn(max = 700.dp).verticalScroll(rememberScrollState())
@@ -117,15 +115,7 @@ fun EventDetailsSheet(
         },
         confirmButton = { TextButton(onClick = {
             confirmDelete = false
-            deleting = true
-            deleteError = null
-            coroutines.launch {
-                try { onDelete(details, if (details.repeating) scope else null) }
-                catch (e: CancellationException) { throw e }
-                catch (e: android.content.OperationApplicationException) { deleteError = "This event changed elsewhere. Close and reopen it before deleting." }
-                catch (e: Exception) { deleteError = "Couldn’t delete this event. Check calendar access and try again." }
-                finally { deleting = false }
-            }
+            onDelete(details, if (details.repeating) scope else null)
         }) { Text("Delete event", color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Keep event") } },
     )

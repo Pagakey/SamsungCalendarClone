@@ -7,9 +7,9 @@ Last updated: 2026-10-10 (Europe/Athens).
 are separate tasks where verification is incomplete. Do not check a task because
 it was planned, partially scaffolded, or delegated to the device calendar app.
 
-Current checkpoint: **repeating-event scopes and native reminder controls** on top of
-native details and editing, verified with isolated provider fixtures on Xiaomi.
-Next: editor/navigation recovery across process death, then Milestone 4 views. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
+Current checkpoint: **process-death recovery and lifecycle-safe saves**, on top of
+repeating-event scopes, reminder controls and native details/editing, verified on Xiaomi.
+Next: midnight refresh, then Milestone 4 views (day, week, agenda, search). Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
 
 ## Project foundation
 
@@ -39,7 +39,7 @@ Next: editor/navigation recovery across process death, then Milestone 4 views. A
 - [x] Add scrolling for short windows so all six weeks remain reachable.
 - [ ] Verify landscape, split-screen and tablet layouts on devices/emulators.
 - [ ] Verify large fonts, TalkBack, contrast and touch-target accessibility.
-- [ ] Preserve visible month/selected date through process death.
+- [x] Preserve visible month/selected date through process death (verified with a real `am kill` on Xiaomi).
 - [ ] Refresh today automatically at midnight while the app stays foregrounded.
 - [ ] Refine localization, locale time formatting and RTL behavior; extract UI strings.
 - [ ] Measure scrolling/swiping performance with a dense calendar.
@@ -94,7 +94,9 @@ Next: editor/navigation recovery across process death, then Milestone 4 views. A
 - [x] Reject stale non-repeating updates/deletes with an atomic snapshot match.
 - [x] Preserve subminute timestamps and overlap offsets; reject times in a DST gap.
 - [x] Keep repeating events/exception edits and deletes out of the single-event mutation path.
-- [ ] Preserve editing/navigation state across process recreation and make in-flight saves lifecycle-safe.
+- [x] Preserve editing/navigation state across process recreation and make in-flight saves lifecycle-safe.
+- [x] Make retried saves safe: create dedupes by iCalendar UID, a landed update/delete retry succeeds, a second single-occurrence exception is refused.
+- [ ] Device-check editor restoration after a real process kill (needs calendar permission granted; covered by StateRestorationTester and Bundle parcel tests).
 - [ ] Support moving existing events to another calendar without losing attendee/reminder data.
 
 ## Milestone 4 — More views and navigation
@@ -136,7 +138,7 @@ Next: editor/navigation recovery across process death, then Milestone 4 views. A
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
 - [x] Run all 27 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE and the starter test).
-- [x] Run all 31 Xiaomi instrumented tests successfully (15 provider, 3 month, 4 details, 8 editor and the starter test).
+- [x] Run all 39 Xiaomi instrumented tests successfully (17 provider, 5 month, 4 details, 10 editor, 2 saved-state and the starter test).
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.
