@@ -4,7 +4,9 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.samsungcalendarclone.domain.model.DeviceCalendar
+import com.example.samsungcalendarclone.domain.model.EventReminder
 import com.example.samsungcalendarclone.domain.model.NewEvent
+import com.example.samsungcalendarclone.domain.model.REMINDER_ALERT
 import com.example.samsungcalendarclone.ui.event.EventEditor
 import com.example.samsungcalendarclone.ui.theme.SamsungCalendarCloneTheme
 import org.junit.Assert.*
@@ -56,6 +58,29 @@ class EventEditorTest {
         compose.onNodeWithText("Original title").performTextReplacement("Changed title")
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle { assertEquals(initial.copy(title = "Changed title"), saved) }
+    }
+    @Test fun newTimedEventDefaultsToTenMinuteReminderThatCanBeChanged() {
+        editor()
+        compose.onNodeWithText("Event title").performTextInput("Planning")
+        compose.onNodeWithText("10 minutes before").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove reminder 10 minutes before").performClick()
+        compose.onNodeWithText("No reminders").assertIsDisplayed()
+        compose.onNodeWithText("Add reminder").performScrollTo().performClick()
+        compose.onNodeWithText("1 hour before").performClick()
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle { assertEquals(listOf(EventReminder(60, REMINDER_ALERT)), saved?.reminders) }
+    }
+    @Test fun allDayNewEventDropsTimedDefaultReminder() {
+        editor()
+        compose.onNodeWithText("Event title").performTextInput("Holiday")
+        compose.onNodeWithContentDescription("All day").performClick()
+        compose.onNodeWithText("No reminders").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle { assertEquals(emptyList<EventReminder>(), saved?.reminders) }
+    }
+    @Test fun reminderLimitDisablesAdding() {
+        editor(calendars = listOf(DeviceCalendar(1, "Test calendar", "Test account", 0, true, maxReminders = 1)))
+        compose.onNodeWithText("Reminder limit reached").performScrollTo().assertIsNotEnabled()
     }
     @Test fun changingOnlyAllDayRequiresDiscardConfirmation() {
         editor()

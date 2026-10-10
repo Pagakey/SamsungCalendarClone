@@ -149,3 +149,46 @@ synced calendars. Announce device test cycles so installation/theme changes are 
 - Next: explicit recurrence mutation scopes, native reminder controls, selectable zones,
   and lifecycle-safe saves/navigation restoration. The larger views/reminders/widgets
   roadmap remains unchecked; native single-event CRUD is no longer a pending task.
+
+## 2026-10-10 — Native reminder controls and local Git (Claude Code)
+
+### Problem and changes
+
+- The editor could only preserve reminders; adding or changing them required the
+  device calendar app.
+- Added `domain/model/Reminders.kt`: reminder method constants, presets, defaults,
+  order-insensitive comparison and labels (all-day reminders count back from midnight).
+- `DeviceCalendar` now carries `MAX_REMINDERS` and `ALLOWED_REMINDERS`; `NewEvent`
+  carries its reminder list and `details()` fills it.
+- Editor: reminders section with Remove buttons and an Add reminder preset menu,
+  limit-aware; untouched defaults on a new event follow the all-day switch; reminder
+  changes count as unsaved changes and survive configuration changes.
+- Repository: create inserts the event and reminders in one batch. Update replaces
+  reminder rows only when changed, after assert-query checks that the loaded rows are
+  still current, in the same transaction as the conditional event update. Limits and
+  methods are validated; existing methods such as email are kept.
+- Details sheet uses the shared reminder labels.
+
+### Verification
+
+- `./gradlew assembleDebug assembleDebugAndroidTest testDebugUnitTest lintDebug`:
+  BUILD SUCCESSFUL; 20 JVM tests passed; lint 0 errors, 19 warnings (unchanged).
+- Manual ADB instrumentation on the Xiaomi (app installation and permissions preserved):
+  **OK (23 tests)**. New provider tests cover create/replace/clear reminders, a stale
+  reminder edit rolling back the title change too, and the 5-reminder / allowed-method
+  limits. New editor tests cover the default, remove/add, all-day default and limit.
+- All mutations used the temporary UUID LOCAL calendars, which the tests deleted and
+  asserted gone. No personal calendar data was touched. The app was relaunched afterward.
+- Raw output: `app/build/reports/manual-device/reminders-run.txt` (ignored).
+
+### Git
+
+- The owner asked for a private GitHub repository. Initialized Git on `main`, reviewed
+  the 60 staged files (no build output, `local.properties`, keystores, APKs, logs or
+  local paths) and committed locally with repo-local author `Pagakey` and the GitHub
+  no-reply email (the machine's global identity was unrelated).
+- Not pushed yet: `gh` is signed in as a different account (`gmaridakis`), so the owner
+  is choosing which account owns the repository.
+
+Next: push once the account is confirmed; then recurrence mutation scopes and
+lifecycle-safe editor/navigation restoration.

@@ -12,6 +12,7 @@ import android.provider.CalendarContract.Reminders as Reminders
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
+import com.example.samsungcalendarclone.domain.model.EventReminder
 import com.example.samsungcalendarclone.domain.model.NewEvent
 import com.example.samsungcalendarclone.domain.model.eventsByDate
 import kotlinx.coroutines.runBlocking
@@ -80,7 +81,7 @@ class CalendarRepositoryTest {
             put(Reminders.EVENT_ID, id); put(Reminders.MINUTES, 10); put(Reminders.METHOD, Reminders.METHOD_ALERT)
         })
         val original = requireNotNull(repository.details(id))
-        assertEquals(draft(), original.event)
+        assertEquals(draft().copy(reminders = original.reminders), original.event)
         assertTrue(original.canEdit)
         assertEquals(10, original.reminders.single().minutes)
         repository.update(original, original.event.copy(title = "Updated fictional event", notes = "Updated notes"))
@@ -137,6 +138,48 @@ class CalendarRepositoryTest {
         try { repository.delete(original); fail("Stale delete must fail") }
         catch (_: OperationApplicationException) { }
         assertEquals("External update", repository.details(original.id)!!.event.title)
+    }
+
+    private fun reminderRows(id: Long): List<Pair<Int, Int>> = resolver.query(Reminders.CONTENT_URI,
+        arrayOf(Reminders.MINUTES, Reminders.METHOD), "${Reminders.EVENT_ID} = ?", arrayOf(id.toString()), "${Reminders.MINUTES} ASC")!!
+        .use { c -> buildList { while (c.moveToNext()) add(c.getInt(0) to c.getInt(1)) } }
+
+    @Test fun remindersAreCreatedAndReplacedWithTheEvent() = runBlocking {
+        val alert = Reminders.METHOD_ALERT
+        val id = ContentUris.parseId(repository.create(draft().copy(reminders = listOf(EventReminder(30, alert), EventReminder(10, alert)))))
+        assertEquals(listOf(10 to alert, 30 to alert), reminderRows(id))
+        val original = repository.details(id)!!
+        assertEquals(listOf(EventReminder(10, alert), EventReminder(30, alert)), original.reminders)
+        repository.update(original, original.event.copy(title = "Retimed", reminders = listOf(EventReminder(60, alert))))
+        assertEquals(listOf(60 to alert), reminderRows(id))
+        assertEquals("Retimed", repository.details(id)!!.event.title)
+        val single = repository.details(id)!!
+        repository.update(single, single.event.copy(reminders = emptyList()))
+        assertTrue(reminderRows(id).isEmpty())
+    }
+
+    @Test fun staleReminderEditRollsBackTheWholeSave() = runBlocking {
+        val alert = Reminders.METHOD_ALERT
+        val id = ContentUris.parseId(repository.create(draft().copy(reminders = listOf(EventReminder(10, alert)))))
+        val original = repository.details(id)!!
+        resolver.insert(Reminders.CONTENT_URI, ContentValues().apply {
+            put(Reminders.EVENT_ID, id); put(Reminders.MINUTES, 45); put(Reminders.METHOD, alert)
+        })
+        try {
+            repository.update(original, original.event.copy(title = "Must not save", reminders = listOf(EventReminder(5, alert))))
+            fail("Stale reminder replacement must fail")
+        } catch (_: OperationApplicationException) { }
+        assertEquals(listOf(10 to alert, 45 to alert), reminderRows(id))
+        assertEquals(draft().title, repository.details(id)!!.event.title)
+    }
+
+    @Test fun reminderLimitsAndMethodsAreEnforced() = runBlocking {
+        val tooMany = (1..6).map { EventReminder(it * 5, Reminders.METHOD_ALERT) }
+        try { repository.create(draft().copy(reminders = tooMany)); fail("Six reminders exceed the calendar's limit of five") }
+        catch (_: IllegalArgumentException) { }
+        try { repository.create(draft().copy(reminders = listOf(EventReminder(10, Reminders.METHOD_EMAIL)))); fail("Email is not allowed here") }
+        catch (_: IllegalArgumentException) { }
+        assertTrue(repository.events(LocalDate.of(2030, 4, 10), LocalDate.of(2030, 4, 11), ZoneOffset.UTC).none { it.calendarId == calendarId })
     }
 
     @Test fun readOnlyCalendarRejectsWrites() = runBlocking {

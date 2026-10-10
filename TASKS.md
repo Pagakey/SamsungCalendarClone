@@ -7,9 +7,9 @@ Last updated: 2026-10-10 (Europe/Athens).
 are separate tasks where verification is incomplete. Do not check a task because
 it was planned, partially scaffolded, or delegated to the device calendar app.
 
-Current checkpoint: **native details and non-repeating event editing**, verified
-with isolated provider fixtures on Xiaomi. Next: recurrence scopes, native reminder
-controls and editor/navigation recovery. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
+Current checkpoint: **native reminder controls** on top of native details and
+non-repeating event editing, verified with isolated provider fixtures on Xiaomi.
+Next: recurrence scopes and editor/navigation recovery. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
 
 ## Project foundation
 
@@ -79,7 +79,10 @@ controls and editor/navigation recovery. Advanced recurrence remains pending. Se
 - [ ] Add recurrence presets and preserve supported/custom recurrence rules safely.
 - [ ] Add a selectable event time zone with correct DST validation.
 - [x] Read existing reminder rows through `CalendarContract.Reminders` and display them in details.
-- [ ] Add native reminder controls and write reminder rows atomically with events.
+- [x] Add native reminder controls and write reminder rows atomically with events.
+- [x] Respect per-calendar `MAX_REMINDERS` / `ALLOWED_REMINDERS`; keep existing email/SMS reminder methods.
+- [x] Reject stale reminder replacements and roll back the whole event save.
+- [ ] Offer custom reminder times beyond the preset list.
 - [ ] Expose event colors and availability only where the selected calendar supports them.
 - [x] Verify native create/edit/delete, reminder preservation, stale-write rejection and read-only calendar guards on Xiaomi using isolated data.
 - [x] Verify recurring-instance expansion and rejection of accidental single-event mutations on a series.
@@ -129,8 +132,8 @@ controls and editor/navigation recovery. Advanced recurrence remains pending. Se
 - [x] Add leap-February, Sunday/Monday starts and both year-boundary date tests.
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
-- [x] Run all 15 JVM tests successfully (10 calendar-date tests, 4 editor-time tests and the starter test).
-- [x] Run all 17 Xiaomi instrumented tests successfully (5 provider, 3 month, 3 details, 5 editor and the starter test).
+- [x] Run all 20 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder and the starter test).
+- [x] Run all 23 Xiaomi instrumented tests successfully (8 provider, 3 month, 3 details, 8 editor and the starter test).
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.
@@ -151,7 +154,8 @@ controls and editor/navigation recovery. Advanced recurrence remains pending. Se
 - [ ] Choose a license with the owner; document third-party licenses as needed.
 - [ ] Capture polished light/dark screenshots and a short demo using fictional calendar data.
 - [ ] Write an architecture/design case study with actual engineering tradeoffs.
-- [ ] Initialize Git and inspect the initial staged files for generated files, account data and credentials.
+- [x] Initialize Git and inspect the initial staged files for generated files, account data and credentials.
 - [ ] Add CI for unit tests, lint and builds with the project's supported toolchain.
-- [ ] Create the GitHub repository and publish when the owner requests it.
+- [ ] Push to a private GitHub repository (owner requested 2026-10-10; waiting on which GitHub account owns it).
+- [ ] Make the GitHub repository public when the owner requests it.
 - [ ] Add release notes, known limitations and reproducible installation instructions for a portfolio release.

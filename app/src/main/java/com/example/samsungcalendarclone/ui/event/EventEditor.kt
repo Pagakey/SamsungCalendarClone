@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,9 +18,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.example.samsungcalendarclone.domain.model.DeviceCalendar
-import com.example.samsungcalendarclone.domain.model.NewEvent
-import com.example.samsungcalendarclone.domain.model.editorInstant
+import com.example.samsungcalendarclone.domain.model.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.*
@@ -40,6 +39,11 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
     var startMinute by rememberSaveable { mutableIntStateOf(initialStart?.let { it.hour * 60 + it.minute } ?: 9 * 60) }
     var endMinute by rememberSaveable { mutableIntStateOf(initialEnd?.let { it.hour * 60 + it.minute } ?: 10 * 60) }
     var allDay by rememberSaveable { mutableStateOf(initial?.allDay ?: false) }
+    val initialReminders = remember(initial) {
+        initial?.reminders ?: defaultReminders(false, calendars.firstOrNull()?.newReminderMethod ?: REMINDER_ALERT)
+    }
+    var reminders by rememberSaveable(saver = reminderListSaver) { mutableStateOf(initialReminders) }
+    var showReminderPresets by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var showCalendars by remember { mutableStateOf(false) }
@@ -52,7 +56,10 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
         startDay != (initialStart?.toLocalDate()?.toEpochDay() ?: date.toEpochDay()) ||
         endDay != (initialEnd?.toLocalDate()?.toEpochDay() ?: date.toEpochDay()) ||
         startMinute != (initialStart?.let { it.hour * 60 + it.minute } ?: 9 * 60) ||
-        endMinute != (initialEnd?.let { it.hour * 60 + it.minute } ?: 10 * 60)
+        endMinute != (initialEnd?.let { it.hour * 60 + it.minute } ?: 10 * 60) ||
+        !sameReminders(reminders, initialReminders)
+    val calendar = calendars.find { it.id == calendarId }
+    val reminderLimitReached = calendar != null && calendar.maxReminders > 0 && reminders.size >= calendar.maxReminders
     fun close() { if (!saving) { if (dirty) confirmDiscard = true else onDismiss() } }
     fun pickDate(epoch: Long, update: (Long) -> Unit) {
         val current = LocalDate.ofEpochDay(epoch)
@@ -84,7 +91,12 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
                 if (end <= begin) { error = "End must be after start."; return }
                 saving = true
                 scope.launch {
-                    try { onSave(NewEvent(title, id, begin.toEpochMilli(), end.toEpochMilli(), allDay, zone.id, location, notes)) }
+                    // A new event's reminders follow the calendar finally chosen; existing ones keep their methods.
+                    val saved = if (initial != null || calendar == null) reminders else reminders.map {
+                        if (calendar.allowedReminderMethods.isEmpty() || it.method in calendar.allowedReminderMethods) it
+                        else it.copy(method = calendar.newReminderMethod)
+                    }.distinct()
+                    try { onSave(NewEvent(title, id, begin.toEpochMilli(), end.toEpochMilli(), allDay, zone.id, location, notes, saved)) }
                     catch (e: CancellationException) { throw e }
                     catch (e: SecurityException) { error = "Calendar permission changed. Close this form and allow access in app settings." }
                     catch (e: android.content.OperationApplicationException) { error = "This event changed elsewhere. Close and reopen it before saving." }
@@ -125,7 +137,12 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("All day", Modifier.weight(1f))
-                        Switch(allDay, { allDay = it }, enabled = !saving, modifier = Modifier.semantics { contentDescription = "All day" })
+                        Switch(allDay, { checked ->
+                            // Untouched defaults on a new event follow the all-day choice.
+                            val method = calendar?.newReminderMethod ?: REMINDER_ALERT
+                            if (initial == null && sameReminders(reminders, defaultReminders(allDay, method))) reminders = defaultReminders(checked, method)
+                            allDay = checked
+                        }, enabled = !saving, modifier = Modifier.semantics { contentDescription = "All day" })
                     }
                     Text("Starts", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -143,9 +160,32 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
                     }
                     if (!allDay) Text(zone.id.replace('_', ' '), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     HorizontalDivider()
+                    Text("Reminders", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    if (reminders.isEmpty()) Text("No reminders", fontSize = 14.sp)
+                    reminders.sortedWith(reminderOrder).forEach { reminder ->
+                        val label = reminderLabel(reminder.minutes, allDay) + (reminderMethodLabel(reminder.method)?.let { " · $it" } ?: "")
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, Modifier.weight(1f), fontSize = 14.sp)
+                            TextButton(onClick = { reminders = reminders - reminder }, enabled = !saving,
+                                modifier = Modifier.semantics { contentDescription = "Remove reminder $label" }) { Text("Remove") }
+                        }
+                    }
+                    Box {
+                        TextButton(onClick = { showReminderPresets = true }, enabled = !saving && !reminderLimitReached) {
+                            Text(if (reminderLimitReached) "Reminder limit reached" else "Add reminder")
+                        }
+                        DropdownMenu(showReminderPresets, onDismissRequest = { showReminderPresets = false }) {
+                            val method = calendar?.newReminderMethod ?: REMINDER_ALERT
+                            (if (allDay) allDayReminderPresets else timedReminderPresets)
+                                .filter { minutes -> reminders.none { it.minutes == minutes && it.method == method } }
+                                .forEach { minutes -> DropdownMenuItem(text = { Text(reminderLabel(minutes, allDay)) },
+                                    onClick = { reminders = reminders + EventReminder(minutes, method); showReminderPresets = false }) }
+                        }
+                    }
+                    HorizontalDivider()
                     OutlinedTextField(location, { location = it }, label = { Text("Location") }, singleLine = true, enabled = !saving, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, minLines = 3, enabled = !saving, modifier = Modifier.fillMaxWidth())
-                    Text("Repeats and reminder changes are available through “Open in calendar app” on the event details screen. Existing reminders are preserved when you edit.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Repeat options are available through “Open in calendar app” on the event details screen.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Spacer(Modifier.height(24.dp))
                 }
@@ -157,3 +197,8 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
             dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } })
     }
 }
+
+private val reminderListSaver = listSaver<MutableState<List<EventReminder>>, Int>(
+    save = { state -> state.value.flatMap { listOf(it.minutes, it.method) } },
+    restore = { values -> mutableStateOf(values.chunked(2).map { (minutes, method) -> EventReminder(minutes, method) }) },
+)

@@ -88,11 +88,28 @@ runner invocation avoids Gradle connected-test installation cleanup.
 - Machine-local raw test evidence: `app/build/reports/manual-device/instrumentation.txt`.
   The initial failed run is retained as `first-run.txt` in the same ignored directory.
 
+## Reminder controls (added later on 2026-10-10)
+
+The editor lists reminders with Remove buttons and an Add reminder menu of presets
+(at start to 1 week before for timed events; 09:00 one day, two days and a week
+before for all-day events). New timed events default to 10 minutes before; new
+all-day events start with none. Reminders added here use a notification when the
+calendar allows it, and the calendar's `MAX_REMINDERS` disables adding past the limit.
+
+`AndroidCalendarRepository.create` inserts the event and its reminders in one batch
+using a back reference. `update` rewrites reminder rows only when they changed: it
+asserts the loaded reminder rows are still present, deletes them and inserts the new
+set in the same batch as the conditional event update, so a stale event or reminder
+snapshot rolls back everything. Files: `domain/model/Reminders.kt` (new),
+`CalendarModels.kt`, `AndroidCalendarRepository.kt`, `EventEditor.kt`,
+`EventDetailsSheet.kt`; tests `RemindersTest.kt` (new), `CalendarRepositoryTest.kt`
+and `EventEditorTest.kt`. Result: 20 JVM tests and **OK (23 tests)** on the Xiaomi.
+
 ## Remaining limitations
 
 - Existing events cannot yet move between calendars.
-- Reminder rows are displayed/preserved; native reminder writing and notification
-  scheduling are separate unfinished tasks.
+- Reminder controls write provider reminder rows (see the reminder section below);
+  this app's own notification scheduling is still unfinished.
 - Selecting a different time zone and controlling ambiguous-time offsets explicitly
   are still pending; existing zones/offsets are preserved where supported.
 - Full editor/navigation restoration and in-flight-save recovery across process death

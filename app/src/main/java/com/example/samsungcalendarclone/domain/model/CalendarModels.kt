@@ -13,7 +13,23 @@ fun monthDates(month: YearMonth): List<LocalDate> {
     return List(42) { start.plusDays(it.toLong()) }
 }
 
-data class DeviceCalendar(val id: Long, val name: String, val account: String, val color: Int, val writable: Boolean)
+data class DeviceCalendar(
+    val id: Long,
+    val name: String,
+    val account: String,
+    val color: Int,
+    val writable: Boolean,
+    /** Provider limit on reminders per event; 0 means the calendar reports no limit. */
+    val maxReminders: Int = 0,
+    /** Reminder methods the calendar accepts (`Reminders.METHOD_*`); empty means unrestricted. */
+    val allowedReminderMethods: Set<Int> = emptySet(),
+) {
+    /** Method used for reminders added in this app: a notification when the calendar allows it. */
+    val newReminderMethod: Int get() = when {
+        allowedReminderMethods.isEmpty() || REMINDER_ALERT in allowedReminderMethods -> REMINDER_ALERT
+        else -> allowedReminderMethods.minOrNull() ?: REMINDER_DEFAULT
+    }
+}
 
 data class CalendarEvent(
     val id: Long,
@@ -48,6 +64,7 @@ data class NewEvent(
     val zone: String,
     val location: String,
     val notes: String,
+    val reminders: List<EventReminder> = emptyList(),
 )
 
 /** The stored event plus its calendar capabilities; recurring occurrences stay read-only here. */
@@ -66,4 +83,4 @@ data class EventDetails(
     val canEdit: Boolean get() = calendar?.writable == true && !repeating && hasSupportedZone
 }
 
-data class EventReminder(val minutes: Int, val method: Int)
+

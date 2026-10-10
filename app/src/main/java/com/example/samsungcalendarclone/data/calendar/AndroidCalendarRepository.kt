@@ -7,6 +7,8 @@ import android.provider.CalendarContract.Events as Events
 import android.provider.CalendarContract.Reminders as Reminders
 import com.example.samsungcalendarclone.domain.model.EventDetails
 import com.example.samsungcalendarclone.domain.model.EventReminder
+import com.example.samsungcalendarclone.domain.model.reminderOrder
+import com.example.samsungcalendarclone.domain.model.sameReminders
 import android.content.Context
 import android.database.ContentObserver
 import android.os.Handler
@@ -38,11 +40,14 @@ class AndroidCalendarRepository(context: Context) {
     suspend fun calendars(visibleOnly: Boolean = true): List<DeviceCalendar> = withContext(Dispatchers.IO) {
         val result = mutableListOf<DeviceCalendar>()
         resolver.query(CalendarContract.Calendars.CONTENT_URI, arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, CalendarContract.Calendars.ACCOUNT_NAME,
-            CalendarContract.Calendars.CALENDAR_COLOR, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL), if (visibleOnly) "${CalendarContract.Calendars.VISIBLE} = ?" else null, if (visibleOnly) arrayOf("1") else null,
+            CalendarContract.Calendars.CALENDAR_COLOR, CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+            CalendarContract.Calendars.MAX_REMINDERS, CalendarContract.Calendars.ALLOWED_REMINDERS), if (visibleOnly) "${CalendarContract.Calendars.VISIBLE} = ?" else null, if (visibleOnly) arrayOf("1") else null,
             "${CalendarContract.Calendars.CALENDAR_DISPLAY_NAME} COLLATE NOCASE")?.use { cursor ->
             while (cursor.moveToNext()) result += DeviceCalendar(
                 cursor.getLong(0), cursor.getString(1) ?: "Calendar", cursor.getString(2) ?: "On device",
                 cursor.getInt(3), cursor.getInt(4) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR,
+                if (cursor.isNull(5)) 0 else cursor.getInt(5),
+                cursor.getString(6).orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }.toSet(),
             )
         }
         result
@@ -73,9 +78,16 @@ class AndroidCalendarRepository(context: Context) {
         require(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }
         require(event.title.isNotBlank()) { "Give your event a title." }
         require(event.end > event.begin) { "End must be after start." }
-        require(calendars(visibleOnly = false).any { it.id == event.calendarId && it.writable }) { "This calendar is no longer writable." }
-        val values = event.values()
-        checkNotNull(resolver.insert(CalendarContract.Events.CONTENT_URI, values)) { "The calendar could not save this event." }
+        val calendar = calendars(visibleOnly = false).find { it.id == event.calendarId && it.writable }
+        requireNotNull(calendar) { "This calendar is no longer writable." }
+        validateReminders(event.reminders, calendar)
+        // One batch so the event and its reminders are saved together or not at all.
+        val operations = arrayListOf(ContentProviderOperation.newInsert(Events.CONTENT_URI).withValues(event.values()).build())
+        event.reminders.forEach { reminder ->
+            operations += ContentProviderOperation.newInsert(Reminders.CONTENT_URI)
+                .withValueBackReference(Reminders.EVENT_ID, 0).withValues(reminder.values()).build()
+        }
+        checkNotNull(resolver.applyBatch(CalendarContract.AUTHORITY, operations).firstOrNull()?.uri) { "The calendar could not save this event." }
     }
 
     suspend fun details(id: Long, occurrence: CalendarEvent? = null): EventDetails? = withContext(Dispatchers.IO) {
@@ -92,25 +104,63 @@ class AndroidCalendarRepository(context: Context) {
                 cursor.getString(6).orEmpty(), cursor.getString(7).orEmpty())
             val reminders = mutableListOf<EventReminder>()
             resolver.query(Reminders.CONTENT_URI, arrayOf(Reminders.MINUTES, Reminders.METHOD),
-                "${Reminders.EVENT_ID} = ?", arrayOf(id.toString()), "${Reminders.MINUTES} DESC")?.use { rows ->
+                "${Reminders.EVENT_ID} = ?", arrayOf(id.toString()), null)?.use { rows ->
                 while (rows.moveToNext()) reminders += EventReminder(rows.getInt(0), rows.getInt(1))
             }
-            EventDetails(id, event, calendars(visibleOnly = false).find { it.id == event.calendarId },
+            reminders.sortWith(reminderOrder)
+            EventDetails(id, event.copy(reminders = reminders), calendars(visibleOnly = false).find { it.id == event.calendarId },
                 cursor.getString(8), cursor.getString(9), if (cursor.isNull(10)) null else cursor.getLong(10), zone, reminders)
         }
     }
 
     suspend fun update(original: EventDetails, event: NewEvent) = withContext(Dispatchers.IO) {
-        validateEditable(original)
+        val calendar = validateEditable(original)
         require(event.calendarId == original.event.calendarId) { "Moving an existing event to another calendar is not supported yet." }
         require(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }
         require(event.title.isNotBlank()) { "Give your event a title." }
         require(event.end > event.begin) { "End must be after start." }
         val (selection, args) = unchangedSelection(original)
         // Match the snapshot atomically so external changes cannot be silently overwritten.
-        val operation = ContentProviderOperation.newUpdate(Events.CONTENT_URI)
-            .withSelection(selection, args).withValues(event.values()).withExpectedCount(1).build()
-        resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(operation))
+        val operations = arrayListOf(ContentProviderOperation.newUpdate(Events.CONTENT_URI)
+            .withSelection(selection, args).withValues(event.values()).withExpectedCount(1).build())
+        if (!sameReminders(event.reminders, original.reminders)) {
+            validateReminders(event.reminders, calendar, original.reminders)
+            operations += replaceReminders(original, event.reminders)
+        }
+        // The provider applies a batch in one transaction, so a stale snapshot rolls back every row.
+        resolver.applyBatch(CalendarContract.AUTHORITY, operations)
+    }
+
+    /** Asserts the loaded reminder rows are still current, then swaps them for [reminders]. */
+    private fun replaceReminders(original: EventDetails, reminders: List<EventReminder>): List<ContentProviderOperation> {
+        val eventId = original.id.toString()
+        val byEvent = "${Reminders.EVENT_ID} = ?"
+        val operations = mutableListOf(ContentProviderOperation.newAssertQuery(Reminders.CONTENT_URI)
+            .withSelection(byEvent, arrayOf(eventId)).withExpectedCount(original.reminders.size).build())
+        original.reminders.groupingBy { it }.eachCount().forEach { (reminder, count) ->
+            operations += ContentProviderOperation.newAssertQuery(Reminders.CONTENT_URI)
+                .withSelection("$byEvent AND ${Reminders.MINUTES} = ? AND ${Reminders.METHOD} = ?",
+                    arrayOf(eventId, reminder.minutes.toString(), reminder.method.toString()))
+                .withExpectedCount(count).build()
+        }
+        operations += ContentProviderOperation.newDelete(Reminders.CONTENT_URI).withSelection(byEvent, arrayOf(eventId)).build()
+        reminders.forEach { reminder ->
+            operations += ContentProviderOperation.newInsert(Reminders.CONTENT_URI)
+                .withValue(Reminders.EVENT_ID, original.id).withValues(reminder.values()).build()
+        }
+        return operations
+    }
+
+    private fun validateReminders(reminders: List<EventReminder>, calendar: DeviceCalendar, existing: List<EventReminder> = emptyList()) {
+        require(calendar.maxReminders <= 0 || reminders.size <= calendar.maxReminders) {
+            "${calendar.name} allows at most ${calendar.maxReminders} reminders."
+        }
+        require(reminders.all { it.minutes >= -1 }) { "Reminders must be at or before the start." }
+        val allowed = calendar.allowedReminderMethods
+        // Methods already on the event stay valid even when the calendar no longer offers them.
+        require(allowed.isEmpty() || reminders.all { it.method in allowed || existing.any { old -> old.method == it.method } }) {
+            "${calendar.name} doesn’t support this kind of reminder."
+        }
     }
 
     suspend fun delete(original: EventDetails) = withContext(Dispatchers.IO) {
@@ -121,9 +171,9 @@ class AndroidCalendarRepository(context: Context) {
         resolver.applyBatch(CalendarContract.AUTHORITY, arrayListOf(operation))
     }
 
-    private suspend fun validateEditable(original: EventDetails) {
+    private suspend fun validateEditable(original: EventDetails): DeviceCalendar {
         require(!original.repeating) { "Use the device calendar app to change this repeating event." }
-        require(calendars(visibleOnly = false).any { it.id == original.event.calendarId && it.writable }) {
+        return requireNotNull(calendars(visibleOnly = false).find { it.id == original.event.calendarId && it.writable }) {
             "This calendar is read-only or no longer available."
         }
     }
@@ -151,6 +201,11 @@ class AndroidCalendarRepository(context: Context) {
         put(Events.EVENT_TIMEZONE, if (allDay) "UTC" else zone)
         put(Events.EVENT_LOCATION, location)
         put(Events.DESCRIPTION, notes)
+    }
+
+    private fun EventReminder.values() = ContentValues().apply {
+        put(Reminders.MINUTES, minutes)
+        put(Reminders.METHOD, method)
     }
 
 }

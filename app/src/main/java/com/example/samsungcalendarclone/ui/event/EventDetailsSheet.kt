@@ -13,6 +13,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import com.example.samsungcalendarclone.domain.model.CalendarEvent
 import com.example.samsungcalendarclone.domain.model.EventDetails
+import com.example.samsungcalendarclone.domain.model.reminderLabel
+import com.example.samsungcalendarclone.domain.model.reminderMethodLabel
 import com.example.samsungcalendarclone.ui.month.eventColor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -69,8 +71,7 @@ fun EventDetailsSheet(
                 if (event.location.isNotBlank()) DetailValue("Location", event.location)
                 if (event.notes.isNotBlank()) DetailValue("Notes", event.notes)
                 if (details.reminders.isNotEmpty()) DetailValue("Reminders", details.reminders.joinToString("\n") {
-                    val timing = when (it.minutes) { -1 -> "Calendar default"; 0 -> "At start"; else -> "${it.minutes} minutes before" }
-                    timing + when (it.method) { 1 -> " · Notification"; 2 -> " · Email"; 3 -> " · SMS"; else -> "" }
+                    reminderLabel(it.minutes, event.allDay) + (reminderMethodLabel(it.method)?.let { method -> " · $method" } ?: "")
                 })
                 HorizontalDivider()
                 when {
