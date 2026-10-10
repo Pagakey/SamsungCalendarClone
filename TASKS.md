@@ -128,9 +128,9 @@ test on the Xiaomi (needs the owner's OK), then Milestone 6 HyperOS help and wid
 
 ## Milestone 6 — Xiaomi / HyperOS reliability
 
-- [ ] Add concise setup/help for notifications and battery “No restrictions”.
-- [ ] Explain background autostart and exact alarms only when applicable.
-- [ ] Offer supported system-settings links; never silently change settings or bypass restrictions.
+- [x] Add concise setup/help for notifications and battery “No restrictions” (shown only once this app's reminder alerts are on).
+- [x] Explain background autostart only when applicable (Xiaomi/Redmi/POCO); exact alarms need no explanation because the provider schedules them.
+- [x] Offer supported system-settings links (App info, app notification settings); never silently change settings or bypass restrictions.
 - [ ] Test reminder delivery on the Xiaomi with screen off and after prolonged idle.
 
 ## Milestone 7 — Widgets
@@ -147,7 +147,7 @@ test on the Xiaomi (needs the owner's OK), then Milestone 6 HyperOS help and wid
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
 - [x] Run all 38 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock, 5 view-layout, 3 alert-text and the starter test).
-- [x] Run all 49 Xiaomi instrumented tests successfully (18 provider, 9 screen, 4 details, 11 editor, 2 saved-state, 2 view-render, 2 reminder-alert and the starter test).
+- [x] Run all 52 Xiaomi instrumented tests successfully (18 provider, 9 screen, 4 details, 11 editor, 2 saved-state, 2 view-render, 2 reminder-alert, 3 reminder-settings and the starter test).
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.

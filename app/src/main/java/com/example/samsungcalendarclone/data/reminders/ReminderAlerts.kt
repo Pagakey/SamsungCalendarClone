@@ -106,6 +106,18 @@ object ReminderAlerts {
     }
 }
 
+/**
+ * Device conditions that can stop reminder broadcasts reaching this app. Read-only: the app
+ * only explains them and links to its standard App info page, never changes them itself.
+ */
+object DeviceSetup {
+    /** Xiaomi, Redmi and POCO phones gate background broadcasts behind Autostart and battery settings. */
+    val xiaomiFamily: Boolean get() = Build.MANUFACTURER.lowercase() in setOf("xiaomi", "redmi", "poco")
+
+    fun batteryUnrestricted(context: Context): Boolean =
+        context.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
+}
+
 /** Receives the provider's reminder broadcast; the alarm time is the last segment of its data URI. */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

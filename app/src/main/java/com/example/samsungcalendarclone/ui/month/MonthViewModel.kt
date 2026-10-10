@@ -8,6 +8,7 @@ import android.content.OperationApplicationException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import com.example.samsungcalendarclone.data.calendar.CalendarChangeRejected
+import com.example.samsungcalendarclone.data.reminders.DeviceSetup
 import com.example.samsungcalendarclone.data.reminders.ReminderAlerts
 import androidx.lifecycle.viewModelScope
 import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
@@ -40,6 +41,7 @@ data class MonthUiState(
     /** Whether this app posts reminder notifications (off by default; the device calendar app also alerts). */
     val appReminders: Boolean = false,
     val notificationsAllowed: Boolean = false,
+    val batteryUnrestricted: Boolean = true,
     /** How far the agenda reaches from the selected date; "Show more" extends it. */
     val agendaDays: Int = AGENDA_STEP_DAYS,
 ) {
@@ -124,7 +126,8 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
         val read = allowed(Manifest.permission.READ_CALENDAR)
         _state.update { it.copy(hasReadPermission = read, hasWritePermission = allowed(Manifest.permission.WRITE_CALENDAR),
             today = LocalDate.now(), zone = ZoneId.systemDefault(),
-            appReminders = ReminderAlerts.enabled(getApplication()), notificationsAllowed = ReminderAlerts.canPost(getApplication())) }
+            appReminders = ReminderAlerts.enabled(getApplication()), notificationsAllowed = ReminderAlerts.canPost(getApplication()),
+            batteryUnrestricted = DeviceSetup.batteryUnrestricted(getApplication())) }
         if (read) {
             if (observer == null) observer = viewModelScope.launch {
                 try { repository.changes().collect { refresh() } }

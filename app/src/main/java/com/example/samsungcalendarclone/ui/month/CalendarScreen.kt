@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.samsungcalendarclone.domain.model.*
+import com.example.samsungcalendarclone.data.reminders.DeviceSetup
 import com.example.samsungcalendarclone.ui.event.EditRequest
 import com.example.samsungcalendarclone.ui.event.EditRequestSaver
 import com.example.samsungcalendarclone.ui.event.EventEditor
@@ -249,7 +250,8 @@ fun CalendarScreen(model: MonthViewModel) {
         }
         if (!state.hasWritePermission && state.hasReadPermission) TextButton(onClick = ::settings, modifier = Modifier.padding(horizontal = 12.dp)) { Text("Manage calendar permissions") }
         HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
-        ReminderSettings(state, onToggle = ::setAppReminders, onNotificationSettings = ::notificationSettings)
+        ReminderSettings(state, xiaomi = DeviceSetup.xiaomiFamily, onToggle = ::setAppReminders,
+            onNotificationSettings = ::notificationSettings, onAppInfo = ::settings)
         Spacer(Modifier.height(28.dp))
     }
     openedEvent?.let { occurrence ->
@@ -294,7 +296,8 @@ fun CalendarScreen(model: MonthViewModel) {
 
 /** The choice of which app alerts for reminders, with the follow-up a user needs for either answer. */
 @Composable
-private fun ReminderSettings(state: MonthUiState, onToggle: (Boolean) -> Unit, onNotificationSettings: () -> Unit) {
+internal fun ReminderSettings(state: MonthUiState, xiaomi: Boolean, onToggle: (Boolean) -> Unit, onNotificationSettings: () -> Unit,
+                             onAppInfo: () -> Unit) {
     Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Reminder alerts from this app", Modifier.weight(1f), fontSize = 16.sp)
@@ -309,6 +312,13 @@ private fun ReminderSettings(state: MonthUiState, onToggle: (Boolean) -> Unit, o
         }
         if (state.appReminders && !state.hasReadPermission) Text("Allow calendar access so reminders can be read.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+        // Background limits only matter once this app is the one delivering reminders.
+        if (state.appReminders && (xiaomi || !state.batteryUnrestricted)) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (xiaomi) "On Xiaomi phones, open App info, allow Autostart and set Battery saver to “No restrictions”, or reminders may not arrive."
+                else "Battery optimisation can delay reminders. In App info, set battery use to unrestricted.",
+                Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onAppInfo) { Text("App info") }
+        }
     }
 }
 

@@ -361,3 +361,15 @@ Next: Milestone 5 (reminders and notifications).
   time-zone rescheduling, and behaviour with denied permissions.
 
 Next: with the owner's OK, an end-to-end reminder test on the Xiaomi; then HyperOS help.
+
+## 2026-10-10 — Xiaomi/HyperOS reminder setup help (Claude Code)
+
+- HyperOS can stop background broadcasts reaching apps without Autostart and with battery
+  restrictions, which would silently drop this app's reminder alerts. Once the reminder
+  setting is on, the Calendars sheet now explains Autostart and "No restrictions" on
+  Xiaomi/Redmi/POCO (or battery optimisation elsewhere, when it applies) with an App info
+  link. `DeviceSetup` only reads state; it never changes settings or uses private intents.
+- `ReminderSettingsTest` (3 tests) renders just the settings block, so no permission prompt or
+  stored preference is touched. Xiaomi **OK (52 tests)**; lint 0 errors, 19 warnings.
+
+Next: the end-to-end reminder check once the owner agrees.
