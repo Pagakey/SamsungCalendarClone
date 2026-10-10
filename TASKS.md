@@ -159,6 +159,6 @@ Next: editor/navigation recovery across process death, then Milestone 4 views. A
 - [ ] Write an architecture/design case study with actual engineering tradeoffs.
 - [x] Initialize Git and inspect the initial staged files for generated files, account data and credentials.
 - [ ] Add CI for unit tests, lint and builds with the project's supported toolchain.
-- [ ] Push to a private GitHub repository (owner requested 2026-10-10; waiting on which GitHub account owns it).
+- [x] Push to the private GitHub repository `Pagakey/SamsungCalendarClone` (branch `main`, 2026-10-10).
 - [ ] Make the GitHub repository public when the owner requests it.
 - [ ] Add release notes, known limitations and reproducible installation instructions for a portfolio release.

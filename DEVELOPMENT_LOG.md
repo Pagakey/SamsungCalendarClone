@@ -226,6 +226,6 @@ lifecycle-safe editor/navigation restoration.
 
 ### Still open
 
-- Push to the private GitHub repository: `gh` is now signed in as Pagakey, but creating the
-  repository was blocked pending the owner's direct confirmation in this thread.
+- (Resolved) The owner confirmed Pagakey should own the repository. Created private
+  `https://github.com/Pagakey/SamsungCalendarClone` and pushed `main` with all three commits.
 - Next: editor/navigation recovery across process death, then day/week/agenda views.
