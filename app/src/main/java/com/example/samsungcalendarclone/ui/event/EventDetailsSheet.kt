@@ -7,12 +7,17 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
 import com.example.samsungcalendarclone.domain.model.CalendarEvent
 import com.example.samsungcalendarclone.domain.model.EventDetails
+import com.example.samsungcalendarclone.domain.model.RecurrenceScope
 import com.example.samsungcalendarclone.domain.model.reminderLabel
 import com.example.samsungcalendarclone.domain.model.reminderMethodLabel
 import com.example.samsungcalendarclone.ui.month.eventColor
@@ -34,14 +39,16 @@ fun EventDetailsSheet(
     onDismiss: () -> Unit,
     onRetry: () -> Unit,
     onAllowEditing: () -> Unit,
-    onEdit: (EventDetails) -> Unit,
-    onDelete: suspend (EventDetails) -> Unit,
+    onEdit: (EventDetails, RecurrenceScope?) -> Unit,
+    onDelete: suspend (EventDetails, RecurrenceScope?) -> Unit,
     onOpenExternal: () -> Unit,
 ) {
     var confirmDelete by remember { mutableStateOf(false) }
+    var chooseEditScope by remember { mutableStateOf(false) }
+    var scope by remember { mutableStateOf(RecurrenceScope.THIS) }
     var deleting by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
+    val coroutines = rememberCoroutineScope()
     ModalBottomSheet(onDismissRequest = { if (!deleting) onDismiss() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().heightIn(max = 700.dp).verticalScroll(rememberScrollState())
@@ -74,17 +81,21 @@ fun EventDetailsSheet(
                     reminderLabel(it.minutes, event.allDay) + (reminderMethodLabel(it.method)?.let { method -> " · $method" } ?: "")
                 })
                 HorizontalDivider()
+                val scopes = details.recurrenceScopes
                 when {
-                    details.repeating -> Text("This is part of a repeating event. Use your calendar app to choose which occurrences to change.",
-                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     details.calendar?.writable != true -> Text("This calendar is read-only or no longer available.",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     !details.hasSupportedZone -> Text("This event uses an unrecognized time zone. Open it in your calendar app to edit it.",
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    details.repeating && scopes.isEmpty() -> Text("This is part of a repeating event. Use your calendar app to choose which occurrences to change.",
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     !hasWritePermission -> TextButton(onClick = onAllowEditing) { Text("Allow editing") }
                     else -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        FilledTonalButton(onClick = { onEdit(details) }, enabled = !loading && !deleting && loadError == null) { Text("Edit") }
-                        TextButton(onClick = { confirmDelete = true }, enabled = !loading && !deleting && loadError == null) {
+                        FilledTonalButton(onClick = {
+                            scope = RecurrenceScope.THIS
+                            if (scopes.size > 1) chooseEditScope = true else onEdit(details, scopes.firstOrNull())
+                        }, enabled = !loading && !deleting && loadError == null) { Text("Edit") }
+                        TextButton(onClick = { scope = RecurrenceScope.THIS; confirmDelete = true }, enabled = !loading && !deleting && loadError == null) {
                             Text(if (deleting) "Deleting…" else "Delete", color = MaterialTheme.colorScheme.error)
                         }
                     }
@@ -96,14 +107,20 @@ fun EventDetailsSheet(
         }
     }
     if (confirmDelete && details != null) AlertDialog(
-        onDismissRequest = { confirmDelete = false }, title = { Text("Delete this event?") },
-        text = { Text("“${details.event.title.ifBlank { "Untitled event" }}” will be removed from ${details.calendar?.name ?: "its calendar"}. This change may sync to your other devices.") },
+        onDismissRequest = { confirmDelete = false },
+        title = { Text(if (details.recurrenceScopes.size > 1) "Delete repeating event?" else "Delete this event?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (details.recurrenceScopes.size > 1) ScopeChoices(details.recurrenceScopes, scope) { scope = it }
+                Text("“${details.event.title.ifBlank { "Untitled event" }}” will be removed from ${details.calendar?.name ?: "its calendar"}. This change may sync to your other devices.")
+            }
+        },
         confirmButton = { TextButton(onClick = {
             confirmDelete = false
             deleting = true
             deleteError = null
-            scope.launch {
-                try { onDelete(details) }
+            coroutines.launch {
+                try { onDelete(details, if (details.repeating) scope else null) }
                 catch (e: CancellationException) { throw e }
                 catch (e: android.content.OperationApplicationException) { deleteError = "This event changed elsewhere. Close and reopen it before deleting." }
                 catch (e: Exception) { deleteError = "Couldn’t delete this event. Check calendar access and try again." }
@@ -112,6 +129,25 @@ fun EventDetailsSheet(
         }) { Text("Delete event", color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Keep event") } },
     )
+    if (chooseEditScope && details != null) AlertDialog(
+        onDismissRequest = { chooseEditScope = false }, title = { Text("Edit repeating event") },
+        text = { ScopeChoices(details.recurrenceScopes, scope) { scope = it } },
+        confirmButton = { TextButton(onClick = { chooseEditScope = false; onEdit(details, scope) }) { Text("Edit") } },
+        dismissButton = { TextButton(onClick = { chooseEditScope = false }) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun ScopeChoices(scopes: List<RecurrenceScope>, selected: RecurrenceScope, onSelect: (RecurrenceScope) -> Unit) {
+    Column(Modifier.selectableGroup()) {
+        scopes.forEach { option ->
+            Row(Modifier.fillMaxWidth().selectable(option == selected, role = Role.RadioButton) { onSelect(option) }
+                .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(option == selected, onClick = null)
+                Text(option.label, Modifier.padding(start = 12.dp))
+            }
+        }
+    }
 }
 
 @Composable

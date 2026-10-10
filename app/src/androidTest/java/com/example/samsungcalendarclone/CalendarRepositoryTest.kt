@@ -14,6 +14,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
 import com.example.samsungcalendarclone.domain.model.EventReminder
 import com.example.samsungcalendarclone.domain.model.NewEvent
+import com.example.samsungcalendarclone.domain.model.RecurrenceScope
 import com.example.samsungcalendarclone.domain.model.eventsByDate
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -180,6 +181,136 @@ class CalendarRepositoryTest {
         try { repository.create(draft().copy(reminders = listOf(EventReminder(10, Reminders.METHOD_EMAIL)))); fail("Email is not allowed here") }
         catch (_: IllegalArgumentException) { }
         assertTrue(repository.events(LocalDate.of(2030, 4, 10), LocalDate.of(2030, 4, 11), ZoneOffset.UTC).none { it.calendarId == calendarId })
+    }
+
+    /** [synced] gives the series a sync ID, as an account's sync adapter would. */
+    private fun series(rule: String, reminderMinutes: Int? = 15, synced: Boolean = false): Long {
+        val uri = if (synced) syncUri(Events.CONTENT_URI) else Events.CONTENT_URI
+        val id = ContentUris.parseId(resolver.insert(uri, ContentValues().apply {
+            if (synced) put(Events._SYNC_ID, "fictional-${UUID.randomUUID()}")
+            put(Events.CALENDAR_ID, calendarId); put(Events.TITLE, "Fictional standup")
+            put(Events.DTSTART, draft().begin); put(Events.DURATION, "P3600S")
+            put(Events.EVENT_TIMEZONE, "UTC"); put(Events.RRULE, rule)
+        })!!)
+        reminderMinutes?.let { minutes -> resolver.insert(Reminders.CONTENT_URI, ContentValues().apply {
+            put(Reminders.EVENT_ID, id); put(Reminders.MINUTES, minutes); put(Reminders.METHOD, Reminders.METHOD_ALERT)
+        }) }
+        return id
+    }
+
+    private suspend fun ours() = repository.events(LocalDate.of(2030, 4, 9), LocalDate.of(2030, 4, 20), ZoneOffset.UTC)
+        .filter { it.calendarId == calendarId }.sortedBy { it.begin }
+
+    /** Raw rows of the test calendar, attached to assertion messages for provider differences. */
+    private fun dump(): String = resolver.query(Events.CONTENT_URI, arrayOf(Events._ID, Events.TITLE, Events.DTSTART, Events.DTEND,
+        Events.DURATION, Events.RRULE, Events.STATUS, Events.ORIGINAL_ID, Events.ORIGINAL_INSTANCE_TIME, Events.DELETED, Events.LAST_DATE),
+        "${Events.CALENDAR_ID} = ?", arrayOf(calendarId.toString()), null)!!.use { c ->
+        buildList { while (c.moveToNext()) add((0 until c.columnCount).joinToString(",") { "${c.getColumnName(it)}=${c.getString(it)}" }) }
+    }.joinToString("\n")
+
+    private fun day(millis: Long) = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).dayOfMonth
+
+    @Test fun thisOccurrenceEditBecomesExceptionWithSeriesReminders() = runBlocking {
+        val id = series("FREQ=DAILY;COUNT=3", synced = true)
+        val occurrence = ours()[1]
+        val original = repository.details(id, occurrence)!!
+        assertEquals(RecurrenceScope.entries, original.recurrenceScopes)
+        val moved = original.event.copy(title = "Moved standup", begin = occurrence.begin + 3_600_000, end = occurrence.end + 3_600_000)
+        repository.updateOccurrences(original, occurrence, moved, RecurrenceScope.THIS)
+        val after = ours()
+        assertEquals(dump(), listOf("Fictional standup", "Moved standup", "Fictional standup"), after.map { it.title })
+        assertEquals(occurrence.begin + 3_600_000, after[1].begin)
+        val exception = repository.details(after[1].id, after[1])!!
+        assertTrue(exception.isException)
+        assertEquals(listOf(RecurrenceScope.THIS), exception.recurrenceScopes)
+        assertEquals(listOf(EventReminder(15, Reminders.METHOD_ALERT)), exception.reminders)
+        assertEquals("Fictional standup", repository.details(id)!!.event.title)
+        // Deleting the changed occurrence cancels it and leaves the rest of the series.
+        repository.deleteOccurrences(exception, after[1], RecurrenceScope.THIS)
+        assertEquals(listOf(10, 12), ours().map { day(it.begin) })
+    }
+
+    @Test fun thisOccurrenceDeleteHidesOnlyThatDay() = runBlocking {
+        for (synced in listOf(true, false)) {
+            val id = series("FREQ=DAILY;COUNT=3", synced = synced)
+            val occurrence = ours()[1]
+            repository.deleteOccurrences(repository.details(id, occurrence)!!, occurrence, RecurrenceScope.THIS)
+            assertEquals(dump(), listOf(10, 12), ours().map { day(it.begin) })
+            repository.deleteOccurrences(repository.details(id, ours()[0])!!, ours()[0], RecurrenceScope.ALL)
+            assertTrue(dump(), ours().isEmpty())
+        }
+    }
+
+    @Test fun deviceOnlySeriesEditDetachesOneOccurrenceThenCountsIt() = runBlocking {
+        val id = series("FREQ=DAILY;COUNT=4")
+        val occurrence = ours()[1]
+        val original = repository.details(id, occurrence)!!
+        assertFalse(original.synced)
+        repository.updateOccurrences(original, occurrence, original.event.copy(title = "Moved standup",
+            begin = occurrence.begin + 3_600_000, end = occurrence.end + 3_600_000), RecurrenceScope.THIS)
+        val after = ours()
+        assertEquals(dump(), listOf("Fictional standup", "Moved standup", "Fictional standup", "Fictional standup"), after.map { it.title })
+        val detached = repository.details(after[1].id, after[1])!!
+        assertFalse(detached.repeating)
+        assertEquals(listOf(EventReminder(15, Reminders.METHOD_ALERT)), detached.reminders)
+        // A later split must still count the detached date toward COUNT=4.
+        val third = after[2]
+        val series = repository.details(id, third)!!
+        repository.updateOccurrences(series, third, series.event.copy(title = "Later standup", begin = third.begin, end = third.end),
+            RecurrenceScope.FOLLOWING)
+        assertEquals(dump(), listOf("Fictional standup", "Moved standup", "Later standup", "Later standup"), ours().map { it.title })
+    }
+
+    @Test fun followingEditSplitsSeriesAndKeepsTotalCount() = runBlocking {
+        val id = series("FREQ=DAILY;COUNT=4")
+        val occurrence = ours()[2]
+        val original = repository.details(id, occurrence)!!
+        repository.updateOccurrences(original, occurrence, original.event.copy(title = "Later standup",
+            begin = occurrence.begin, end = occurrence.end, reminders = emptyList()), RecurrenceScope.FOLLOWING)
+        val after = ours()
+        assertEquals(dump(), listOf(10, 11, 12, 13), after.map { day(it.begin) })
+        assertEquals(listOf("Fictional standup", "Fictional standup", "Later standup", "Later standup"), after.map { it.title })
+        assertEquals(setOf(id), after.take(2).map { it.id }.toSet())
+        val newSeries = repository.details(after[2].id, after[2])!!
+        assertEquals("FREQ=DAILY;COUNT=2", newSeries.recurrence)
+        assertTrue(newSeries.reminders.isEmpty())
+        assertEquals(1, repository.details(id)!!.reminders.size)
+    }
+
+    @Test fun followingDeleteEndsSeriesBeforeOccurrence() = runBlocking {
+        val id = series("FREQ=DAILY")
+        val occurrence = ours()[3]
+        repository.deleteOccurrences(repository.details(id, occurrence)!!, occurrence, RecurrenceScope.FOLLOWING)
+        assertEquals(dump(), listOf(10, 11, 12), ours().map { day(it.begin) })
+    }
+
+    @Test fun allEventsEditShiftsWholeSeries() = runBlocking {
+        val id = series("FREQ=DAILY;COUNT=3")
+        val occurrence = ours()[1]
+        val original = repository.details(id, occurrence)!!
+        repository.updateOccurrences(original, occurrence, original.event.copy(title = "Later standup",
+            begin = occurrence.begin + 1_800_000, end = occurrence.end + 3_600_000), RecurrenceScope.ALL)
+        val after = ours()
+        assertEquals(setOf(id), after.map { it.id }.toSet())
+        assertEquals(dump(), listOf(Instant.parse("2030-04-10T09:30:00Z"), Instant.parse("2030-04-11T09:30:00Z"), Instant.parse("2030-04-12T09:30:00Z")),
+            after.map { Instant.ofEpochMilli(it.begin) })
+        assertTrue(after.all { it.end - it.begin == 5_400_000L && it.title == "Later standup" })
+        repository.deleteOccurrences(repository.details(id, after[0])!!, after[0], RecurrenceScope.ALL)
+        assertTrue(ours().isEmpty())
+    }
+
+    @Test fun staleSeriesChangesAreRejected() = runBlocking {
+        val id = series("FREQ=DAILY;COUNT=3")
+        val occurrence = ours()[1]
+        val original = repository.details(id, occurrence)!!
+        resolver.update(ContentUris.withAppendedId(Events.CONTENT_URI, id), ContentValues().apply { put(Events.TITLE, "External update") }, null, null)
+        for (scope in RecurrenceScope.entries) {
+            try { repository.updateOccurrences(original, occurrence, original.event.copy(title = "Stale"), scope); fail("Stale $scope edit must fail") }
+            catch (_: OperationApplicationException) { }
+            try { repository.deleteOccurrences(original, occurrence, scope); fail("Stale $scope delete must fail") }
+            catch (_: OperationApplicationException) { }
+        }
+        assertEquals(List(3) { "External update" }, ours().map { it.title })
     }
 
     @Test fun readOnlyCalendarRejectsWrites() = runBlocking {

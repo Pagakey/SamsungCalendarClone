@@ -105,6 +105,33 @@ snapshot rolls back everything. Files: `domain/model/Reminders.kt` (new),
 `EventDetailsSheet.kt`; tests `RemindersTest.kt` (new), `CalendarRepositoryTest.kt`
 and `EventEditorTest.kt`. Result: 20 JVM tests and **OK (23 tests)** on the Xiaomi.
 
+## Repeating-event scopes (added later on 2026-10-10)
+
+Edit and Delete on a repeating occurrence ask for **This event**, **This and following
+events** or **All events** (`RecurrenceScope`). Changed occurrences stored as their own
+rows only offer This event. Series with RDATE stay with the device calendar app.
+
+- This event, synced series: insert through `Events.CONTENT_EXCEPTION_URI` with
+  `ORIGINAL_INSTANCE_TIME`, a DURATION and no CALENDAR_ID/DTEND (the provider rejects
+  those), then set the exception's reminders explicitly. Deleting inserts a cancelled exception.
+- This event, device-only series (no `_SYNC_ID`): the platform provider re-expands an
+  unsynced exception without its series, which hid every occurrence on the Xiaomi. So the
+  date is added to EXDATE, and an edit becomes a standalone event with the series reminders.
+- This and following: the series gets `UNTIL` just before the occurrence; an edit inserts
+  a new series from there, with COUNT reduced by earlier instances, exceptions and EXDATEs.
+  Deleting also removes changed occurrences after the split.
+- All events: the series start moves by the wall-clock change (DST-safe); a time change is
+  refused while individually changed occurrences exist.
+- Every series update sends the full timing (DTSTART, DURATION, RRULE, EXDATE, ALL_DAY,
+  zone). Partial updates such as RRULE alone left the provider's instances stale.
+- Each operation matches a snapshot of the series row (including EXDATE) in the same batch,
+  so changes made elsewhere cause a rejection instead of an overwrite.
+
+Files: `domain/model/Recurrence.kt` (new), `CalendarModels.kt`, `AndroidCalendarRepository.kt`,
+`EventDetailsSheet.kt`, `EventEditor.kt` (all-day locked for series scopes), `CalendarScreen.kt`,
+`MonthViewModel.kt`; tests `RecurrenceTest.kt` (new), `CalendarRepositoryTest.kt`, `EventDetailsTest.kt`.
+Result: 27 JVM tests and **OK (31 tests)** on the Xiaomi.
+
 ## Remaining limitations
 
 - Existing events cannot yet move between calendars.

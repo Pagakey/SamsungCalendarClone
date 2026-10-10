@@ -192,3 +192,40 @@ synced calendars. Announce device test cycles so installation/theme changes are 
 
 Next: push once the account is confirmed; then recurrence mutation scopes and
 lifecycle-safe editor/navigation restoration.
+
+## 2026-10-10 — Repeating-event scopes (Claude Code)
+
+### Problem and changes
+
+- Repeating events were read-only in the app. Edit/Delete now offer This event, This and
+  following events, and All events, implemented in `AndroidCalendarRepository`
+  (`updateOccurrences` / `deleteOccurrences`) with rule helpers in `domain/model/Recurrence.kt`.
+- Details shows a scope choice (radio list) for edit and inside the delete confirmation;
+  the editor locks all-day for series-wide scopes. RDATE series keep the handoff.
+- See `docs/NATIVE_EVENT_CHECKPOINT.md` for the per-scope provider operations.
+
+### Device findings and fixes
+
+- First Xiaomi run: 5 of 30 failed. The provider rejects DTEND and CALENDAR_ID on exception
+  inserts; partial series updates (RRULE alone, or DTSTART without RRULE) left instances
+  stale or collapsed to one. Fixed by sending a duration on exceptions and the full series
+  timing on every series update.
+- Exceptions on device-only (unsynced) series made every occurrence disappear: the platform
+  provider re-expands an unsynced exception without its series. Synced series (with
+  `_SYNC_ID`) work. Device-only series now use EXDATE plus a standalone event instead.
+  Provider tests cover both, using a fictional sync ID on the temporary LOCAL calendar.
+
+### Verification
+
+- `./gradlew assembleDebug assembleDebugAndroidTest testDebugUnitTest lintDebug`: BUILD
+  SUCCESSFUL; 27 JVM tests passed; lint 0 errors, 19 warnings (unchanged).
+- Full manual ADB instrumentation on the Xiaomi: **OK (31 tests)**. Outputs are in the
+  ignored `app/build/reports/manual-device/` (`recurrence-run*.txt` hold the failing runs).
+- All mutations were confined to temporary UUID LOCAL calendars, deleted and asserted
+  gone after each test. No personal calendar data was touched; the app was relaunched.
+
+### Still open
+
+- Push to the private GitHub repository: `gh` is now signed in as Pagakey, but creating the
+  repository was blocked pending the owner's direct confirmation in this thread.
+- Next: editor/navigation recovery across process death, then day/week/agenda views.

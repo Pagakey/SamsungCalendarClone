@@ -104,6 +104,12 @@ class MonthViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun details(event: CalendarEvent) = repository.details(event.id, event)
     suspend fun update(original: EventDetails, event: NewEvent) { repository.update(original, event); refresh() }
     suspend fun delete(original: EventDetails) { repository.delete(original); refresh() }
+    suspend fun updateOccurrences(original: EventDetails, occurrence: CalendarEvent, event: NewEvent, scope: RecurrenceScope) {
+        repository.updateOccurrences(original, occurrence, event, scope); refresh()
+    }
+    suspend fun deleteOccurrences(original: EventDetails, occurrence: CalendarEvent, scope: RecurrenceScope) {
+        repository.deleteOccurrences(original, occurrence, scope); refresh()
+    }
 
     suspend fun create(event: NewEvent) { repository.create(event); refresh() }
 }

@@ -7,9 +7,9 @@ Last updated: 2026-10-10 (Europe/Athens).
 are separate tasks where verification is incomplete. Do not check a task because
 it was planned, partially scaffolded, or delegated to the device calendar app.
 
-Current checkpoint: **native reminder controls** on top of native details and
-non-repeating event editing, verified with isolated provider fixtures on Xiaomi.
-Next: recurrence scopes and editor/navigation recovery. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
+Current checkpoint: **repeating-event scopes and native reminder controls** on top of
+native details and editing, verified with isolated provider fixtures on Xiaomi.
+Next: editor/navigation recovery across process death, then Milestone 4 views. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
 
 ## Project foundation
 
@@ -75,7 +75,10 @@ Next: recurrence scopes and editor/navigation recovery. Advanced recurrence rema
 - [x] Build an in-app event details screen, including a useful fallback without another calendar app.
 - [x] Load and edit existing non-repeating events natively; preserve their existing calendar and reminders.
 - [x] Delete non-repeating events natively with explicit confirmation.
-- [ ] Handle repeating events explicitly: this occurrence, future occurrences and entire series.
+- [x] Handle repeating events explicitly: this occurrence, future occurrences and entire series.
+- [x] Device-only (unsynced) series: change one occurrence via EXDATE + standalone event, since the platform provider re-expands unsynced exceptions without their series.
+- [ ] Series with RDATE, TZID-form EXDATE + COUNT splits, or individually changed later occurrences still hand off to the device calendar app.
+- [ ] Edit the repeat rule itself (frequency/end) natively.
 - [ ] Add recurrence presets and preserve supported/custom recurrence rules safely.
 - [ ] Add a selectable event time zone with correct DST validation.
 - [x] Read existing reminder rows through `CalendarContract.Reminders` and display them in details.
@@ -86,7 +89,7 @@ Next: recurrence scopes and editor/navigation recovery. Advanced recurrence rema
 - [ ] Expose event colors and availability only where the selected calendar supports them.
 - [x] Verify native create/edit/delete, reminder preservation, stale-write rejection and read-only calendar guards on Xiaomi using isolated data.
 - [x] Verify recurring-instance expansion and rejection of accidental single-event mutations on a series.
-- [ ] Verify native recurrence mutation scopes once implemented, including exceptions and read-only accounts.
+- [x] Verify native recurrence mutation scopes, including synced exceptions, device-only series, splits with COUNT, stale rejection and read-only accounts.
 - [x] Guard repeated Save taps and detect unsaved changes to dates/all-day/calendar as well as text.
 - [x] Reject stale non-repeating updates/deletes with an atomic snapshot match.
 - [x] Preserve subminute timestamps and overlap offsets; reject times in a DST gap.
@@ -132,8 +135,8 @@ Next: recurrence scopes and editor/navigation recovery. Advanced recurrence rema
 - [x] Add leap-February, Sunday/Monday starts and both year-boundary date tests.
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
-- [x] Run all 20 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder and the starter test).
-- [x] Run all 23 Xiaomi instrumented tests successfully (8 provider, 3 month, 3 details, 8 editor and the starter test).
+- [x] Run all 27 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE and the starter test).
+- [x] Run all 31 Xiaomi instrumented tests successfully (15 provider, 3 month, 4 details, 8 editor and the starter test).
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.

@@ -25,7 +25,8 @@ import java.time.*
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () -> Unit, onSave: suspend (NewEvent) -> Unit, initial: NewEvent? = null) {
+fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () -> Unit, onSave: suspend (NewEvent) -> Unit, initial: NewEvent? = null,
+                allDayLocked: Boolean = false) {
     val zone = remember(initial?.zone) { ZoneId.of(initial?.zone ?: ZoneId.systemDefault().id) }
     val dateZone = if (initial?.allDay == true) ZoneOffset.UTC else zone
     val initialStart = initial?.let { Instant.ofEpochMilli(it.begin).atZone(dateZone) }
@@ -142,7 +143,7 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
                             val method = calendar?.newReminderMethod ?: REMINDER_ALERT
                             if (initial == null && sameReminders(reminders, defaultReminders(allDay, method))) reminders = defaultReminders(checked, method)
                             allDay = checked
-                        }, enabled = !saving, modifier = Modifier.semantics { contentDescription = "All day" })
+                        }, enabled = !saving && !allDayLocked, modifier = Modifier.semantics { contentDescription = "All day" })
                     }
                     Text("Starts", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -185,7 +186,9 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
                     HorizontalDivider()
                     OutlinedTextField(location, { location = it }, label = { Text("Location") }, singleLine = true, enabled = !saving, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, minLines = 3, enabled = !saving, modifier = Modifier.fillMaxWidth())
-                    Text("Repeat options are available through “Open in calendar app” on the event details screen.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (allDayLocked) "All-day can be changed for one event at a time. Repeat rules are changed through “Open in calendar app”."
+                        else "Repeat options are available through “Open in calendar app” on the event details screen.",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Spacer(Modifier.height(24.dp))
                 }

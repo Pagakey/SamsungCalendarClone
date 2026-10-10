@@ -77,10 +77,29 @@ data class EventDetails(
     val originalId: Long?,
     val sourceZone: String?,
     val reminders: List<EventReminder> = emptyList(),
+    /** Series rows store DURATION instead of DTEND. */
+    val duration: String? = null,
+    val exceptionDates: String? = null,
+    /** Set once an account has synced the row; the provider links exceptions to a series through it. */
+    val syncId: String? = null,
 ) {
+    val synced: Boolean get() = !syncId.isNullOrBlank()
+
     val repeating: Boolean get() = !recurrence.isNullOrBlank() || !recurrenceDates.isNullOrBlank() || originalId != null
     val hasSupportedZone: Boolean get() = runCatching { ZoneId.of(event.zone) }.isSuccess
+    /** Single, non-repeating event that the plain update/delete path may change. */
     val canEdit: Boolean get() = calendar?.writable == true && !repeating && hasSupportedZone
+
+    /** A changed or cancelled occurrence stored as its own row, linked to its series. */
+    val isException: Boolean get() = originalId != null
+
+    /** Scopes this app can apply natively; RDATE series stay with the device calendar app. */
+    val recurrenceScopes: List<RecurrenceScope> get() = when {
+        calendar?.writable != true || !hasSupportedZone || !recurrenceDates.isNullOrBlank() -> emptyList()
+        isException -> listOf(RecurrenceScope.THIS)
+        !recurrence.isNullOrBlank() -> RecurrenceScope.entries
+        else -> emptyList()
+    }
 }
 
 

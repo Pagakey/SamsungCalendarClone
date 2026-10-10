@@ -16,15 +16,16 @@ import java.time.Instant
 class EventDetailsTest {
     @get:Rule val compose = createComposeRule()
     private var deleted = false
+    private var deletedScope: RecurrenceScope? = null
     private val event = NewEvent("Fictional coffee", 1, Instant.parse("2030-04-10T09:00:00Z").toEpochMilli(),
         Instant.parse("2030-04-10T10:00:00Z").toEpochMilli(), false, "UTC", "Cafe", "Bring a notebook")
-    private fun show(repeating: Boolean = false, writable: Boolean = true) {
+    private fun show(repeating: Boolean = false, writable: Boolean = true, recurrenceDates: String? = null) {
         val details = EventDetails(1, event, DeviceCalendar(1, "Test calendar", "Local test", 0, writable),
-            if (repeating) "FREQ=DAILY" else null, null, null, "UTC")
+            if (repeating) "FREQ=DAILY" else null, recurrenceDates, null, "UTC")
         compose.setContent { SamsungCalendarCloneTheme {
             EventDetailsSheet(CalendarEvent(1, 1, event.title, event.begin, event.end, false, 0, event.location),
                 details, false, null, true, onDismiss = {}, onRetry = {}, onAllowEditing = {},
-                onEdit = {}, onDelete = { deleted = true }, onOpenExternal = {})
+                onEdit = { _, _ -> }, onDelete = { _, scope -> deleted = true; deletedScope = scope }, onOpenExternal = {})
         } }
     }
     @Test fun deleteRequiresConfirmationAndCanBeCancelled() {
@@ -38,8 +39,17 @@ class EventDetailsTest {
         compose.onNodeWithText("Delete event").performClick()
         compose.runOnIdle { assertTrue(deleted) }
     }
-    @Test fun repeatingEventHasExplicitHandoffWithoutDestructiveActions() {
+    @Test fun repeatingDeleteAsksWhichEvents() {
         show(repeating = true)
+        compose.onNodeWithText("Delete").performScrollTo().performClick()
+        compose.onNodeWithText("Delete repeating event?").assertIsDisplayed()
+        compose.onNodeWithText("This and following events").assertIsDisplayed()
+        compose.onNodeWithText("All events").performClick()
+        compose.onNodeWithText("Delete event").performClick()
+        compose.runOnIdle { assertTrue(deleted); assertEquals(RecurrenceScope.ALL, deletedScope) }
+    }
+    @Test fun unsupportedRepeatingEventHasExplicitHandoffWithoutDestructiveActions() {
+        show(repeating = true, recurrenceDates = "20300415T090000Z")
         compose.onNodeWithText("This is part of a repeating event.", substring = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Edit").assertDoesNotExist()
         compose.onNodeWithText("Delete").assertDoesNotExist()

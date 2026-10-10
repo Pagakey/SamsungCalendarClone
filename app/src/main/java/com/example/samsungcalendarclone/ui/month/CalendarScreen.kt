@@ -55,7 +55,7 @@ fun CalendarScreen(model: MonthViewModel) {
     val snackbar = remember { SnackbarHostState() }
     var openedEvent by remember { mutableStateOf<CalendarEvent?>(null) }
     var details by remember { mutableStateOf<EventDetails?>(null) }
-    var editingDetails by remember { mutableStateOf<EventDetails?>(null) }
+    var editing by remember { mutableStateOf<EditRequest?>(null) }
     var detailsLoading by remember { mutableStateOf(false) }
     var detailsError by remember { mutableStateOf<String?>(null) }
     var detailsRetry by remember { mutableIntStateOf(0) }
@@ -225,20 +225,25 @@ fun CalendarScreen(model: MonthViewModel) {
         EventDetailsSheet(occurrence, details, detailsLoading, detailsError, state.hasWritePermission,
             onDismiss = { openedEvent = null; details = null }, onRetry = { detailsRetry++ },
             onAllowEditing = { permission.launch(arrayOf(Manifest.permission.WRITE_CALENDAR)) },
-            onEdit = { editingDetails = it },
-            onDelete = { original ->
-                model.delete(original)
+            onEdit = { original, recurrenceScope -> editing = EditRequest(original, occurrence, recurrenceScope) },
+            onDelete = { original, recurrenceScope ->
+                if (recurrenceScope == null) model.delete(original) else model.deleteOccurrences(original, occurrence, recurrenceScope)
                 openedEvent = null; details = null
                 scope.launch { snackbar.showSnackbar("Event deleted") }
             }, onOpenExternal = { openExternalEvent(occurrence) })
     }
-    editingDetails?.let { original ->
-        key(original.id) {
+    editing?.let { (original, occurrence, recurrenceScope) ->
+        key(original.id, occurrence.begin, recurrenceScope) {
+            // A series opens at the tapped occurrence; its stored DTSTART is the first occurrence.
+            val initial = if (recurrenceScope == null || original.isException) original.event
+                else original.event.copy(begin = occurrence.begin, end = occurrence.end)
             EventEditor(state.selectedDate, listOfNotNull(original.calendar),
-                onDismiss = { editingDetails = null }, initial = original.event,
+                onDismiss = { editing = null }, initial = initial,
+                allDayLocked = recurrenceScope != null && recurrenceScope != RecurrenceScope.THIS,
                 onSave = { event ->
-                    model.update(original, event)
-                    editingDetails = null
+                    if (recurrenceScope == null) model.update(original, event)
+                    else model.updateOccurrences(original, occurrence, event, recurrenceScope)
+                    editing = null
                     openedEvent = null; details = null
                     scope.launch { snackbar.showSnackbar("Event updated") }
                 })
@@ -250,6 +255,8 @@ fun CalendarScreen(model: MonthViewModel) {
         scope.launch { snackbar.showSnackbar("Event saved") }
     })
 }
+
+private data class EditRequest(val details: EventDetails, val occurrence: CalendarEvent, val scope: RecurrenceScope?)
 
 @Composable
 private fun dayColor(day: Int): Color = when (day) {
