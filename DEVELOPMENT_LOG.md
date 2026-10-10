@@ -438,3 +438,35 @@ Next: the end-to-end reminder check once the owner agrees.
 
 - 40 JVM tests passed. Xiaomi full suite **OK (59 tests)**, with the 2 opt-in reminder classes
   skipped by assumption.
+
+## 2026-10-10 — Autostart confirmed, smoother month swiping (Claude Code)
+
+### Reminders with the app closed
+
+- The owner had set battery to unrestricted (`deviceidle whitelist` lists the app) but could not
+  find Autostart. `appops` showed `MIUIOP(10008): ignore`. Opened HyperOS's own Autostart screen
+  (`com.miui.securitycenter/...AutoStartManagementActivity`) on the phone; the owner switched it on
+  (`MIUIOP(10008): allow`). Rerun over adb: ActivityManager logged
+  `Start proc ... for broadcast ReminderReceiver caller=com.android.providers.calendar`, and the
+  app's notification appeared within the 5 s polling interval of the alarm time. Temporary calendar
+  deleted, switch set back off.
+
+### Month swiping
+
+- Owner reported the month swipe was not smooth. Measured with 16 adb swipes and `dumpsys gfxinfo`
+  (phone at 60 Hz; it had been warm). Debug build: p50/p90/p99 9/150/450 ms before the changes and
+  13/150/250 ms after — debug Compose is slow regardless. Optimized (R8) build after the changes:
+  7/24/46 ms; with an app-wide baseline profile compiled as on install: 8/19/26 ms; fully AOT: 8/14/24 ms.
+- Changes: pager keeps neighbouring months composed (`beyondViewportPageCount = 1`); the
+  ViewModel loads the previous, current and next month grids and no longer blanks events on a
+  month change; `MonthGrid` takes only the events/selection/today it draws (unrelated updates
+  skip it), measures row height once per page instead of a `BoxWithConstraints` per cell, and
+  reuses a date formatter; event grouping runs on `Dispatchers.Default`;
+  `app/src/main/baseline-prof.txt` adds the app's own code to the bundled library profiles.
+- Left the optimized build (signed locally with the debug key, profile-compiled) installed for
+  the owner's daily use; permissions and Autostart carried over.
+
+### Verification
+
+- Build OK; lint 0 errors, 12 warnings (version notices); JVM tests passed; Xiaomi full suite
+  **OK (59 tests)** (57 run, 2 opt-in reminder checks skipped).

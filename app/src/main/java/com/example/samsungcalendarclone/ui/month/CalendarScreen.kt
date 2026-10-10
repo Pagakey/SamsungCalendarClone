@@ -379,9 +379,10 @@ private fun MonthContent(state: MonthUiState, compact: Boolean, wide: Boolean, m
         Box(Modifier.fillMaxWidth().height(2.dp)) {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
         }
-        HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth().testTag("month-pager"), beyondViewportPageCount = 0) { page ->
+        // Neighbouring months stay composed, so a swipe never has to build a page mid-gesture.
+        HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth().testTag("month-pager"), beyondViewportPageCount = 1) { page ->
             val month = anchor.plusMonths((page - 1200).toLong())
-            MonthGrid(month, state, Modifier.fillMaxSize()) { date -> model.select(date) }
+            MonthGrid(month, state.events, state.selectedDate, state.today, Modifier.fillMaxSize(), onSelect = model::select)
         }
     }
     // Landscape and wide windows put the selected day beside the grid instead of under it.
@@ -439,45 +440,57 @@ private fun dayColor(day: Int): Color = when (day) {
 
 fun eventColor(raw: Int): Color = if (raw == 0) Color(0xFF5E8BC8) else Color(raw).copy(alpha = 1f)
 
+private val cellDescription = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy")
+
+/**
+ * One month page. It takes only what it draws, so unrelated state changes (loading flags, the
+ * day list) skip it, and it measures the row height once instead of per cell.
+ */
 @Composable
-private fun MonthGrid(month: YearMonth, state: MonthUiState, modifier: Modifier, onSelect: (LocalDate) -> Unit) {
-    val dates = remember(month) { monthDates(month) }
-    Column(modifier.padding(horizontal = 12.dp)) {
-        dates.chunked(7).forEach { week ->
-            Row(Modifier.weight(1f).fillMaxWidth()) {
-                week.forEach { date ->
-                    val events = state.events[date].orEmpty()
-                    val selected = date == state.selectedDate
-                    val today = date == state.today
-                    val currentMonth = YearMonth.from(date) == month
-                    BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(8.dp))
-                        .clickable { onSelect(date) }.semantics(mergeDescendants = true) {
-                            contentDescription = date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy")) +
-                                (if (today) ", today" else "") + ", ${events.size} events"
-                            this.selected = selected
-                        }) {
-                        val pillCount = if (maxHeight >= 92.dp) 2 else if (maxHeight >= 66.dp) 1 else 0
-                        Column(Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 3.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+private fun MonthGrid(month: YearMonth, events: Map<LocalDate, List<CalendarEvent>>, selectedDate: LocalDate, today: LocalDate,
+                      modifier: Modifier, onSelect: (LocalDate) -> Unit) {
+    val weeks = remember(month) { monthDates(month).chunked(7) }
+    val primary = MaterialTheme.colorScheme.primary
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val saturday = dayColor(6)
+    val sunday = dayColor(7)
+    BoxWithConstraints(modifier.padding(horizontal = 12.dp)) {
+        val rowHeight = maxHeight / 6
+        val pillCount = if (rowHeight >= 92.dp) 2 else if (rowHeight >= 66.dp) 1 else 0
+        Column(Modifier.fillMaxSize()) {
+            weeks.forEach { week ->
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    week.forEach { date ->
+                        val dayEvents = events[date].orEmpty()
+                        val selected = date == selectedDate
+                        val isToday = date == today
+                        val currentMonth = date.monthValue == month.monthValue && date.year == month.year
+                        Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(8.dp))
+                            .clickable { onSelect(date) }.semantics(mergeDescendants = true) {
+                                contentDescription = date.format(cellDescription) + (if (isToday) ", today" else "") + ", ${dayEvents.size} events"
+                                this.selected = selected
+                            }.padding(horizontal = 2.dp, vertical = 3.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.size(30.dp)
-                                .then(if (selected) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier)
+                                .then(if (selected) Modifier.border(1.5.dp, primary, CircleShape) else Modifier)
                                 .padding(3.dp)
-                                .background(if (today) MaterialTheme.colorScheme.primary else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
+                                .background(if (isToday) primary else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
+                                val weekday = when (date.dayOfWeek.value) { 6 -> saturday; 7 -> sunday; else -> onSurface }
                                 Text(date.dayOfMonth.toString(), fontSize = 13.sp,
-                                    color = if (today) MaterialTheme.colorScheme.onPrimary else
-                                        (if (date.dayOfWeek.value >= 6) dayColor(date.dayOfWeek.value) else MaterialTheme.colorScheme.onSurface).copy(alpha = if (currentMonth) 1f else .35f),
-                                    fontWeight = if (today || selected) FontWeight.SemiBold else FontWeight.Normal)
+                                    color = if (isToday) onPrimary else weekday.copy(alpha = if (currentMonth) 1f else .35f),
+                                    fontWeight = if (isToday || selected) FontWeight.SemiBold else FontWeight.Normal)
                             }
                             Spacer(Modifier.height(3.dp))
-                            events.take(pillCount).forEach { event ->
-                                val color = eventColor(event.color)
+                            dayEvents.take(pillCount).forEach { event ->
                                 Box(Modifier.fillMaxWidth().padding(bottom = 2.dp).clip(RoundedCornerShape(3.dp))
-                                    .background(color.copy(alpha = .19f)).padding(horizontal = 3.dp, vertical = 1.dp)) {
-                                    Text(event.title, fontSize = 9.sp, lineHeight = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                                    .background(eventColor(event.color).copy(alpha = .19f)).padding(horizontal = 3.dp, vertical = 1.dp)) {
+                                    Text(event.title, fontSize = 9.sp, lineHeight = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = onSurface)
                                 }
                             }
-                            if (events.size > pillCount) {
-                                if (pillCount == 0) Box(Modifier.size(4.dp).background(eventColor(events.first().color), CircleShape))
-                                else Text("+${events.size - pillCount}", fontSize = 9.sp, lineHeight = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (dayEvents.size > pillCount) {
+                                if (pillCount == 0) Box(Modifier.size(4.dp).background(eventColor(dayEvents.first().color), CircleShape))
+                                else Text("+${dayEvents.size - pillCount}", fontSize = 9.sp, lineHeight = 10.sp, color = onSurfaceVariant)
                             }
                         }
                     }

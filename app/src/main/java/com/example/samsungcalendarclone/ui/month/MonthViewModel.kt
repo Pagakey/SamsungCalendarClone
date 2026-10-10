@@ -16,7 +16,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
 import com.example.samsungcalendarclone.domain.model.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import java.time.ZonedDateTime
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,7 +51,12 @@ data class MonthUiState(
 ) {
     /** Dates whose events are loaded: the six-week month grid (which holds the selected week and day) or the agenda span. */
     val loadedDates: List<LocalDate> get() =
-        if (view == CalendarView.AGENDA) List(agendaDays) { selectedDate.plusDays(it.toLong()) } else monthDates(month)
+        if (view == CalendarView.AGENDA) List(agendaDays) { selectedDate.plusDays(it.toLong()) } else {
+            // The neighbouring months too, so a page swiped into view already shows its events.
+            val first = monthDates(month.minusMonths(1)).first()
+            val last = monthDates(month.plusMonths(1)).last()
+            List((last.toEpochDay() - first.toEpochDay() + 1).toInt()) { first.plusDays(it.toLong()) }
+        }
 }
 
 const val AGENDA_STEP_DAYS = 56
@@ -153,7 +160,8 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
 
     fun showMonth(month: YearMonth) {
         if (month == _state.value.month) return
-        _state.update { it.copy(month = month, selectedDate = month.atDay(minOf(it.selectedDate.dayOfMonth, month.lengthOfMonth())), events = emptyMap()) }
+        // Keep the loaded events: they already cover the new month, so nothing blanks while it reloads.
+        _state.update { it.copy(month = month, selectedDate = month.atDay(minOf(it.selectedDate.dayOfMonth, month.lengthOfMonth()))) }
         remember(_state.value)
         refresh()
     }
@@ -260,7 +268,9 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
                 val calendars = repository.calendars()
                 val visible = calendars.map { it.id }.toSet() - snapshot.hiddenCalendars
                 val events = repository.events(dates.first(), dates.last().plusDays(1), snapshot.zone)
-                _state.update { it.copy(calendars = calendars, events = eventsByDate(events.filter { event -> event.calendarId in visible }, dates, snapshot.zone), loading = false) }
+                // Grouping ~100 days of events is CPU work; keep it off the main thread during swipes.
+                val byDate = withContext(Dispatchers.Default) { eventsByDate(events.filter { event -> event.calendarId in visible }, dates, snapshot.zone) }
+                _state.update { it.copy(calendars = calendars, events = byDate, loading = false) }
             } catch (e: CancellationException) { throw e }
             catch (e: SecurityException) { calendarAccessFailed() }
             catch (e: Exception) { _state.update { it.copy(loading = false, error = "Couldn’t load calendars. Tap Retry to try again.") } }

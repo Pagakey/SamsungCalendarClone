@@ -47,7 +47,9 @@ next: see the widgets on a real home screen, then the release-readiness items. A
 - [x] Refresh today automatically at midnight while the app stays foregrounded (also on time/zone/date-change broadcasts).
 - [ ] Device-check a real midnight crossing or manual clock change (covered by unit/UI tests calling the same entry point).
 - [ ] Refine localization, locale time formatting and RTL behavior; extract UI strings.
-- [ ] Measure scrolling/swiping performance with a dense calendar.
+- [x] Measure month swiping on the Xiaomi (16 adb swipes, `dumpsys gfxinfo`, owner's real calendar): debug build p90/p99 150/250 ms; optimized build 24/46 ms; with the app baseline profile 19/26 ms (fully AOT 14/24 ms).
+- [x] Smoother month paging: neighbouring months pre-composed and pre-loaded, month cells skip unrelated state changes, one row-height measurement per page, event grouping off the main thread, app baseline profile.
+- [ ] Generate a measured baseline profile with a Macrobenchmark module instead of the app-wide wildcard rule.
 
 ## Milestone 2 — Calendar Provider
 
@@ -125,7 +127,7 @@ next: see the widgets on a real home screen, then the release-readiness items. A
 - [ ] Device-verify rescheduling after reboot and time/time-zone changes (provider-owned; not yet observed on the Xiaomi).
 - [x] Open the correct event occurrence from a notification (`ACTION_OPEN_EVENT` → day selected, details opened; removed events get a notice).
 - [x] End-to-end reminder on the Xiaomi with a fictional event while the app process runs (`ReminderEndToEndTest`, opt-in): notification posted 3 s after the alarm time.
-- [ ] Recheck a reminder with the app not running once Autostart is allowed: with Autostart off, HyperOS logged "process is not permitted to auto start" and dropped the broadcast (only the Xiaomi Calendar alerted).
+- [x] Recheck a reminder with the app not running once Autostart is allowed: with Autostart off HyperOS dropped the broadcast ("process is not permitted to auto start"); with Autostart on, the provider started the app and its notification appeared within seconds of the alarm time.
 - [ ] Test reminders under denied notification/alarm permissions, idle and reboot.
 
 ## Milestone 6 — Xiaomi / HyperOS reliability
