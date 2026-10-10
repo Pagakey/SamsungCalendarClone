@@ -40,6 +40,9 @@ import com.example.samsungcalendarclone.ui.event.EditRequest
 import com.example.samsungcalendarclone.ui.event.EditRequestSaver
 import com.example.samsungcalendarclone.ui.event.EventEditor
 import com.example.samsungcalendarclone.ui.event.OccurrenceSaver
+import com.example.samsungcalendarclone.ui.views.AgendaList
+import com.example.samsungcalendarclone.ui.views.SearchScreen
+import com.example.samsungcalendarclone.ui.views.TimeGrid
 import com.example.samsungcalendarclone.ui.event.EventDetailsSheet
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -78,6 +81,9 @@ fun CalendarScreen(model: MonthViewModel) {
         finally { detailsLoading = false }
     }
     var calendarsOpen by rememberSaveable { mutableStateOf(false) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var viewMenuOpen by remember { mutableStateOf(false) }
+    val search by model.search.collectAsState()
     var editorOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(save) {
         val done = save as? SaveState.Done ?: return@LaunchedEffect
@@ -105,14 +111,6 @@ fun CalendarScreen(model: MonthViewModel) {
     fun settings() {
         context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
     }
-    val anchor = remember { YearMonth.now() }
-    val pager = rememberPagerState(initialPage = 1200 + ChronoUnit.MONTHS.between(anchor, state.month).toInt(), pageCount = { 2401 })
-    fun navigate(month: YearMonth) {
-        scope.launch { pager.animateScrollToPage((1200 + ChronoUnit.MONTHS.between(anchor, month).toInt()).coerceIn(0, 2400)) }
-    }
-    LaunchedEffect(pager) {
-        snapshotFlow { pager.settledPage }.collect { model.showMonth(anchor.plusMonths((it - 1200).toLong())) }
-    }
     fun openExternalEvent(event: CalendarEvent) {
         try {
             context.startActivity(Intent(Intent.ACTION_VIEW, ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.id))
@@ -139,17 +137,20 @@ fun CalendarScreen(model: MonthViewModel) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { calendarsOpen = true }) { Text("Calendars", color = MaterialTheme.colorScheme.onSurface) }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { model.today(); navigate(YearMonth.now()) }) { Text("Today") }
-                }
-                Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 12.dp, bottom = if (compact) 4.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(state.month.year.toString(), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(state.month.month.getDisplayName(TextStyle.FULL, Locale.getDefault()),
-                            fontSize = if (compact) 32.sp else 40.sp, fontWeight = FontWeight.Light, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    TextButton(onClick = { searchOpen = true }) { Text("Search") }
+                    Box {
+                        TextButton(onClick = { viewMenuOpen = true }, modifier = Modifier.semantics { contentDescription = "Change view, ${state.view.label} shown" }) {
+                            Text("${state.view.label} ▾")
+                        }
+                        DropdownMenu(viewMenuOpen, onDismissRequest = { viewMenuOpen = false }) {
+                            CalendarView.entries.forEach { view ->
+                                DropdownMenuItem(text = { Text(view.label) }, onClick = { viewMenuOpen = false; model.showView(view) })
+                            }
+                        }
                     }
-                    IconButton(onClick = { navigate(state.month.minusMonths(1)) }, modifier = Modifier.semantics { contentDescription = "Previous month" }) { Text("‹", fontSize = 32.sp) }
-                    IconButton(onClick = { navigate(state.month.plusMonths(1)) }, modifier = Modifier.semantics { contentDescription = "Next month" }) { Text("›", fontSize = 32.sp) }
+                    TextButton(onClick = model::today) { Text("Today") }
                 }
+                ViewHeader(state, compact, onStep = model::step)
                 if (!state.hasReadPermission) {
                     Row(Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainer).padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -158,53 +159,33 @@ fun CalendarScreen(model: MonthViewModel) {
                     }
                     Spacer(Modifier.height(10.dp))
                 }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    (1..7).forEach { day ->
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            Text(DayOfWeek.of(day).getDisplayName(TextStyle.SHORT, Locale.getDefault()).take(3),
-                                fontSize = 11.sp, color = dayColor(day))
-                        }
-                    }
+                if (state.error != null && state.view != CalendarView.MONTH) Row(Modifier.padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(state.error!!, Modifier.weight(1f), fontSize = 12.sp)
+                    TextButton(onClick = model::refresh) { Text("Retry") }
                 }
-                Box(Modifier.fillMaxWidth().height(2.dp)) {
-                    if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
-                }
-                HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth().testTag("month-pager"), beyondViewportPageCount = 0) { page ->
-                    val month = anchor.plusMonths((page - 1200).toLong())
-                    MonthGrid(month, state, Modifier.fillMaxSize()) { date ->
-                        model.select(date)
-                        if (YearMonth.from(date) != month) navigate(YearMonth.from(date))
+                val open: (CalendarEvent) -> Unit = { event -> details = null; openedEvent = event }
+                when (state.view) {
+                    CalendarView.MONTH -> MonthContent(state, compact, model, open, Modifier.weight(1f))
+                    CalendarView.WEEK, CalendarView.DAY -> {
+                        Box(Modifier.fillMaxWidth().height(2.dp)) {
+                            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
+                        }
+                        TimeGrid(if (state.view == CalendarView.WEEK) weekDates(state.selectedDate) else listOf(state.selectedDate),
+                            state.events, state.today, state.selectedDate, state.zone, onOpenEvent = open, onStep = model::step,
+                            onOpenDay = { day: LocalDate -> model.select(day); model.showView(CalendarView.DAY) }.takeIf { state.view == CalendarView.WEEK },
+                            modifier = Modifier.weight(1f).fillMaxWidth())
                     }
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Column(Modifier.fillMaxWidth().height(if (compact) 115.dp else 194.dp).padding(top = 16.dp)) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(state.selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                        if (state.selectedDate == state.today) Text("  ·  Today", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                    }
-                    when {
-                        state.error != null -> Row(Modifier.padding(horizontal = 24.dp).padding(end = 64.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(state.error!!, Modifier.weight(1f), fontSize = 12.sp)
-                            TextButton(onClick = model::refresh) { Text("Retry") }
+                    CalendarView.AGENDA -> {
+                        Box(Modifier.fillMaxWidth().height(2.dp)) {
+                            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
                         }
-                        state.events[state.selectedDate].isNullOrEmpty() -> Column(Modifier.padding(start = 24.dp, top = 18.dp, end = 94.dp)) {
-                            Text(if (state.hasReadPermission) "No events" else "Your day, at a glance", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (!compact) Text(if (state.hasReadPermission) "Tap + to make a plan." else "Connect your calendars to see events.",
-                                Modifier.padding(top = 5.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        else -> LazyColumn(Modifier.padding(top = 10.dp, end = 88.dp)) {
-                            items(state.events[state.selectedDate].orEmpty(), key = { "${it.id}:${it.begin}" }) { event ->
-                                Row(Modifier.fillMaxWidth().clickable { details = null; openedEvent = event }.padding(horizontal = 24.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Box(Modifier.width(3.dp).height(32.dp).clip(CircleShape).background(eventColor(event.color)))
-                                    Column(Modifier.padding(start = 12.dp)) {
-                                        Text(event.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(if (event.allDay) "All day" else Instant.ofEpochMilli(event.begin).atZone(state.zone).format(DateTimeFormatter.ofPattern("HH:mm")) +
-                                            if (event.location.isBlank()) "" else " · ${event.location}",
-                                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
-                            }
-                        }
+                        val dates = state.loadedDates
+                        AgendaList(dates, state.events, state.today, state.zone,
+                            canShowMore = state.hasReadPermission && state.agendaDays < AGENDA_MAX_DAYS,
+                            emptyText = if (!state.hasReadPermission) "Connect your calendars to see upcoming events."
+                                else if (state.loading) "Loading…"
+                                else "No events from ${dates.first().format(DateTimeFormatter.ofPattern("d MMM"))} to ${dates.last().format(DateTimeFormatter.ofPattern("d MMM yyyy"))}.",
+                            onOpenEvent = open, onShowMore = model::showMoreAgenda, modifier = Modifier.weight(1f).fillMaxWidth())
                     }
                 }
             }
@@ -260,8 +241,112 @@ fun CalendarScreen(model: MonthViewModel) {
                 })
         }
     }
+    if (searchOpen) SearchScreen(search, state.hasReadPermission, state.zone, onQuery = model::search,
+        onOpenEvent = { event ->
+            // Show the result's day behind the sheet, so closing it leaves the user where the event is.
+            model.select(event.firstDate(state.zone))
+            searchOpen = false
+            details = null; openedEvent = event
+        },
+        onConnect = { searchOpen = false; if (requestedRead) settings() else requestRead() },
+        onDismiss = { searchOpen = false })
     if (editorOpen) EventEditor(state.selectedDate, state.calendars.filter { it.writable },
         onDismiss = { editorOpen = false; model.clearSave() }, onSave = model::create, saving = saving, saveError = saveError)
+}
+
+/** Title row: year and the visible month, week or day, with page arrows. */
+@Composable
+private fun ViewHeader(state: MonthUiState, compact: Boolean, onStep: (Boolean) -> Unit) {
+    val locale = Locale.getDefault()
+    val (overline, title, unit) = when (state.view) {
+        CalendarView.MONTH -> Triple(state.month.year.toString(), state.month.month.getDisplayName(TextStyle.FULL, locale), "month")
+        CalendarView.WEEK -> weekDates(state.selectedDate).let { days ->
+            Triple(days.first().year.toString(), weekLabel(days, locale), "week")
+        }
+        CalendarView.DAY -> Triple(state.selectedDate.year.toString(),
+            state.selectedDate.format(DateTimeFormatter.ofPattern("EEE, d MMM", locale)), "day")
+        CalendarView.AGENDA -> Triple("From ${state.selectedDate.format(DateTimeFormatter.ofPattern("d MMM yyyy", locale))}", "Agenda", "week")
+    }
+    Row(Modifier.fillMaxWidth().padding(start = 28.dp, end = 12.dp, bottom = if (compact) 4.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(overline, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, fontSize = if (compact || state.view != CalendarView.MONTH) 32.sp else 40.sp, fontWeight = FontWeight.Light,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        IconButton(onClick = { onStep(false) }, modifier = Modifier.semantics { contentDescription = "Previous $unit" }) { Text("‹", fontSize = 32.sp) }
+        IconButton(onClick = { onStep(true) }, modifier = Modifier.semantics { contentDescription = "Next $unit" }) { Text("›", fontSize = 32.sp) }
+    }
+}
+
+/** Swipeable six-week grid with the selected day's events underneath. */
+@Composable
+private fun MonthContent(state: MonthUiState, compact: Boolean, model: MonthViewModel, onOpenEvent: (CalendarEvent) -> Unit, modifier: Modifier) {
+    val anchor = remember { YearMonth.now() }
+    fun page(month: YearMonth) = (1200 + ChronoUnit.MONTHS.between(anchor, month).toInt()).coerceIn(0, 2400)
+    // Created when the month view appears, so it opens on the month the other views left selected.
+    val pager = rememberPagerState(initialPage = page(state.month), pageCount = { 2401 })
+    // Arrows, Today and taps move the state first and the pager follows. While it animates, an
+    // intermediate settled page (e.g. after rapid taps) must not be reported back as a swipe.
+    var target by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(state.month) {
+        val wanted = page(state.month)
+        if (pager.currentPage == wanted) return@LaunchedEffect
+        target = wanted
+        try { pager.animateScrollToPage(wanted) } finally { if (target == wanted) target = null }
+    }
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.settledPage }.collect { settled ->
+            if (target == null || target == settled) model.showMonth(anchor.plusMonths((settled - 1200).toLong()))
+        }
+    }
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            (1..7).forEach { day ->
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Text(DayOfWeek.of(day).getDisplayName(TextStyle.SHORT, Locale.getDefault()).take(3),
+                        fontSize = 11.sp, color = dayColor(day))
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(2.dp)) {
+            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
+        }
+        HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth().testTag("month-pager"), beyondViewportPageCount = 0) { page ->
+            val month = anchor.plusMonths((page - 1200).toLong())
+            MonthGrid(month, state, Modifier.fillMaxSize()) { date -> model.select(date) }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Column(Modifier.fillMaxWidth().height(if (compact) 115.dp else 194.dp).padding(top = 16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(state.selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                if (state.selectedDate == state.today) Text("  ·  Today", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+            }
+            when {
+                state.error != null -> Row(Modifier.padding(horizontal = 24.dp).padding(end = 64.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(state.error, Modifier.weight(1f), fontSize = 12.sp)
+                    TextButton(onClick = model::refresh) { Text("Retry") }
+                }
+                state.events[state.selectedDate].isNullOrEmpty() -> Column(Modifier.padding(start = 24.dp, top = 18.dp, end = 94.dp)) {
+                    Text(if (state.hasReadPermission) "No events" else "Your day, at a glance", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!compact) Text(if (state.hasReadPermission) "Tap + to make a plan." else "Connect your calendars to see events.",
+                        Modifier.padding(top = 5.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                else -> LazyColumn(Modifier.padding(top = 10.dp, end = 88.dp)) {
+                    items(state.events[state.selectedDate].orEmpty(), key = { "${it.id}:${it.begin}" }) { event ->
+                        Row(Modifier.fillMaxWidth().clickable { onOpenEvent(event) }.padding(horizontal = 24.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.width(3.dp).height(32.dp).clip(CircleShape).background(eventColor(event.color)))
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text(event.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(if (event.allDay) "All day" else Instant.ofEpochMilli(event.begin).atZone(state.zone).format(DateTimeFormatter.ofPattern("HH:mm")) +
+                                    if (event.location.isBlank()) "" else " · ${event.location}",
+                                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

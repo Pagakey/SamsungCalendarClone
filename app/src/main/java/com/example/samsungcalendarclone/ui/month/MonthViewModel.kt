@@ -35,6 +35,27 @@ data class MonthUiState(
     val hiddenCalendars: Set<Long> = emptySet(),
     val loading: Boolean = false,
     val error: String? = null,
+    val view: CalendarView = CalendarView.MONTH,
+    /** How far the agenda reaches from the selected date; "Show more" extends it. */
+    val agendaDays: Int = AGENDA_STEP_DAYS,
+) {
+    /** Dates whose events are loaded: the six-week month grid (which holds the selected week and day) or the agenda span. */
+    val loadedDates: List<LocalDate> get() =
+        if (view == CalendarView.AGENDA) List(agendaDays) { selectedDate.plusDays(it.toLong()) } else monthDates(month)
+}
+
+const val AGENDA_STEP_DAYS = 56
+const val AGENDA_MAX_DAYS = 366
+const val SEARCH_LIMIT = 200
+
+/** Search over a bounded window around today, so a short query can't scan the whole provider. */
+data class SearchState(
+    val query: String = "",
+    val loading: Boolean = false,
+    val results: List<CalendarEvent> = emptyList(),
+    val error: String? = null,
+    val from: LocalDate = LocalDate.now().minusYears(1),
+    val until: LocalDate = LocalDate.now().plusYears(2),
 )
 
 /** Progress of the one calendar write the UI can have in flight. */
@@ -58,12 +79,14 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
     private fun restoredState(initial: MonthUiState): MonthUiState {
         val month = saved.get<String>(KEY_MONTH)?.let { runCatching { YearMonth.parse(it) }.getOrNull() } ?: return initial
         val selected = saved.get<Long>(KEY_SELECTED)?.let { LocalDate.ofEpochDay(it) }?.takeIf { YearMonth.from(it) == month }
-        return initial.copy(month = month, selectedDate = selected ?: month.atDay(1))
+        val view = saved.get<String>(KEY_VIEW)?.let { name -> CalendarView.entries.find { it.name == name } } ?: initial.view
+        return initial.copy(month = month, selectedDate = selected ?: month.atDay(1), view = view)
     }
 
     private fun remember(state: MonthUiState) {
         saved[KEY_MONTH] = state.month.toString()
         saved[KEY_SELECTED] = state.selectedDate.toEpochDay()
+        saved[KEY_VIEW] = state.view.name
     }
     private var observer: Job? = null
     private var query: Job? = null
@@ -124,9 +147,58 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
     }
 
     fun select(date: LocalDate) {
+        val before = _state.value
         showMonth(YearMonth.from(date))
         _state.update { it.copy(selectedDate = date) }
         remember(_state.value)
+        // The agenda starts at the selected date, so moving it changes what must be loaded.
+        if (before.view == CalendarView.AGENDA && before.selectedDate != date) refresh()
+    }
+
+    fun showView(view: CalendarView) {
+        if (view == _state.value.view) return
+        _state.update { it.copy(view = view, agendaDays = AGENDA_STEP_DAYS) }
+        remember(_state.value)
+        refresh()
+    }
+
+    /** Moves by one page of the current view: a month, a week or a day. */
+    fun step(forward: Boolean) {
+        val sign = if (forward) 1L else -1L
+        val current = _state.value
+        when (current.view) {
+            CalendarView.MONTH -> showMonth(current.month.plusMonths(sign))
+            CalendarView.WEEK -> select(current.selectedDate.plusWeeks(sign))
+            CalendarView.DAY -> select(current.selectedDate.plusDays(sign))
+            CalendarView.AGENDA -> select(current.selectedDate.plusWeeks(sign))
+        }
+    }
+
+    fun showMoreAgenda() {
+        _state.update { it.copy(agendaDays = minOf(AGENDA_MAX_DAYS, it.agendaDays + AGENDA_STEP_DAYS)) }
+        refresh()
+    }
+
+    private val _search = MutableStateFlow(SearchState())
+    val search = _search.asStateFlow()
+    private var searchJob: Job? = null
+
+    /** Debounced; a newer query cancels the one in flight. Hidden calendars stay hidden in results. */
+    fun search(text: String) {
+        searchJob?.cancel()
+        val today = LocalDate.now()
+        _search.value = SearchState(text, loading = text.isNotBlank(), from = today.minusYears(1), until = today.plusYears(2))
+        if (text.isBlank() || !_state.value.hasReadPermission) { _search.update { it.copy(loading = false) }; return }
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            val window = _search.value
+            _search.value = try {
+                val results = repository.search(text.trim(), window.from, window.until, _state.value.zone, SEARCH_LIMIT, _state.value.hiddenCalendars)
+                window.copy(loading = false, results = results)
+            } catch (e: CancellationException) { throw e }
+            catch (e: SecurityException) { window.copy(loading = false, error = "Calendar access is off. Allow it in Settings to search.") }
+            catch (e: Exception) { window.copy(loading = false, error = "Couldn’t search your calendars. Try again.") }
+        }
     }
 
     fun today() = select(LocalDate.now())
@@ -134,6 +206,7 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
         _state.update { it.copy(hiddenCalendars = if (id in it.hiddenCalendars) it.hiddenCalendars - id else it.hiddenCalendars + id) }
         preferences.edit().putStringSet("hidden", _state.value.hiddenCalendars.map { it.toString() }.toSet()).apply()
         refresh()
+        if (_search.value.query.isNotBlank()) search(_search.value.query)
     }
 
     fun refresh() {
@@ -143,7 +216,7 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
             _state.update { it.copy(loading = true, error = null) }
             try {
                 val snapshot = _state.value
-                val dates = monthDates(snapshot.month)
+                val dates = snapshot.loadedDates
                 val calendars = repository.calendars()
                 val visible = calendars.map { it.id }.toSet() - snapshot.hiddenCalendars
                 val events = repository.events(dates.first(), dates.last().plusDays(1), snapshot.zone)
@@ -187,6 +260,8 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
     private companion object {
         const val KEY_MONTH = "month"
         const val KEY_SELECTED = "selected_date"
+        const val KEY_VIEW = "view"
+        const val SEARCH_DEBOUNCE_MS = 250L
         const val SAVE_FAILED = "Couldn’t save this event. Check calendar access and try again."
         const val DELETE_FAILED = "Couldn’t delete this event. Check calendar access and try again."
     }

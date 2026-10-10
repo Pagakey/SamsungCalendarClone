@@ -19,12 +19,14 @@ running Android 16. The larger feature roadmap is still in progress.
 - Native event details with dates, calendar/account, notes, location and stored reminders.
 - Native editing and confirmed deletion of writable, non-repeating events, with stale-change protection.
 - Reminder controls in the editor (preset times, per-calendar limits), saved atomically with the event.
+- Month, week, day and agenda views sharing one selected date and calendar filters.
+- Search across event titles, places, notes and guests, from a year back to two years ahead.
 - Repeating events: edit or delete this event, this and following events, or all events.
 - The visible month, open event and unsaved edits survive the app being closed in the background;
   saves keep running through rotation and are safe to retry.
 - Explicit device-calendar handoff for repeat-rule changes and series this app can't change safely.
 
-Editing the repeat rule itself, additional views, search, notifications and widgets
+Editing the repeat rule itself, notifications and widgets
 remain future work. Reminder rows are stored in the Calendar Provider, so the
 device calendar app delivers the alerts; this app does not yet schedule its own notifications.
 
@@ -77,7 +79,7 @@ local calendars; they do not create events in personal accounts.
 For a test run that preserves the installation, see the manual ADB workflow in
 [the native event checkpoint](docs/NATIVE_EVENT_CHECKPOINT.md).
 
-Last verified on 2026-10-10: **30 JVM tests and 41 device tests passed**;
+Last verified on 2026-10-10: **35 JVM tests and 44 device tests passed**;
 `assembleDebug` and `lintDebug` passed with zero lint errors and 19 warnings.
 
 Reports are generated under `app/build/reports/`; machine outputs are ignored by Git.

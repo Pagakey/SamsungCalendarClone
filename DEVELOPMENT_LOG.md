@@ -272,3 +272,37 @@ Next: refresh "today" at midnight while the app is open, then the day/week/agend
   drive `onClockChanged`. A real midnight crossing on the device is still unchecked.
 
 Next: Milestone 4 — day, week and agenda views with shared navigation, then search.
+
+## 2026-10-10 — Week, day and agenda views, and search (Claude Code)
+
+### Changes
+
+- `CalendarView` (Month/Week/Day/Agenda) in `MonthViewModel`, saved with the month and date.
+  All views share `selectedDate` and the calendar filters; `step()` pages by month, week or day.
+  Month/week/day load the six-week month grid (which always contains the selected week);
+  the agenda loads 56 days from the selected date, extendable to 366.
+- `ui/views/TimeGrid.kt`: all-day strip plus a 24-hour grid; `domain/model/Views.kt`
+  `layoutDay` clips events to the day and splits overlapping groups into columns.
+  Current-time line, swipe/arrow paging, week day headers open the day view.
+- `ui/views/AgendaList.kt` (days with events, "Show more") and `ui/views/SearchScreen.kt`.
+  Search uses `Instances.CONTENT_SEARCH_URI` over a bounded window (1 year back, 2 ahead),
+  debounced 250 ms, cancelled by newer queries, capped at 200, with hidden calendars excluded
+  in the provider query. Opening a result selects its day first.
+- `CalendarScreen` was split into a shared header (`ViewHeader`), `MonthContent` (the pager
+  now follows state, with a guard so intermediate pages during animation are ignored) and the
+  other views. Top bar: Calendars, Search, a view menu and Today.
+
+### Verification
+
+- Build/lint: 0 errors, 19 warnings (one new state-backed offset warning fixed).
+  35 JVM tests passed (5 new layout/week-label tests; the label test pins Locale.US because
+  current CLDR spells September "Sept" in en-GB).
+- Xiaomi: **OK (44 tests)** including new tests for switching views with a shared date,
+  week/day paging, agenda/search without permission, and provider search (title, place,
+  date window, limit, hidden calendars) on the temporary LOCAL calendar.
+- Added `ViewsRenderTest` (fictional events, light/dark captures). Its first runs failed
+  with "No compose hierarchies found" because the phone had locked and dozed (`mWakefulness=Dozing`,
+  keyguard showing); this also explains the earlier transient UI failures. It needs an
+  unlocked screen and remains unchecked. One earlier capture confirmed overlap columns and labels.
+
+Next: run `ViewsRenderTest` with the phone unlocked and review the captures; then Milestone 5.

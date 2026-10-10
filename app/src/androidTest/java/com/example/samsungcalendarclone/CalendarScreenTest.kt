@@ -95,6 +95,37 @@ class CalendarScreenTest {
         compose.runOnIdle { model.select(chosen); model.onClockChanged(LocalDate.now().plusDays(1)) }
         compose.runOnIdle { assertEquals(chosen, model.state.value.selectedDate) }
     }
+    @Test fun viewsShareTheSelectedDate() {
+        val date = LocalDate.of(2031, 2, 14)
+        val model = launch(saved = SavedStateHandle(mapOf("month" to "2031-02", "selected_date" to date.toEpochDay())))
+        compose.onNodeWithContentDescription("Change view", substring = true).performClick()
+        compose.onNodeWithText("Week").performClick()
+        compose.onNodeWithText("10 – 16 Feb").assertIsDisplayed()
+        compose.onNodeWithTag("week-grid").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Next week").performClick()
+        compose.onNodeWithText("17 – 23 Feb").assertIsDisplayed()
+        // Tapping a day in the week opens it in the day view.
+        compose.onNodeWithContentDescription("Saturday, 22 February 2031", substring = true).performClick()
+        compose.onNodeWithText(LocalDate.of(2031, 2, 22).format(DateTimeFormatter.ofPattern("EEE, d MMM"))).assertIsDisplayed()
+        compose.onNodeWithTag("day-grid").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Next day").performClick()
+        compose.runOnIdle { assertEquals(LocalDate.of(2031, 2, 23), model.state.value.selectedDate) }
+        // Back to the month view on the month of the selected day, which the views preserved.
+        compose.onNodeWithContentDescription("Change view", substring = true).performClick()
+        compose.onNodeWithText("Month").performClick()
+        compose.onNodeWithText(date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())).assertIsDisplayed()
+        compose.onNodeWithText(LocalDate.of(2031, 2, 23).format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).assertIsDisplayed()
+    }
+    @Test fun agendaAndSearchExplainMissingAccess() {
+        val saved = SavedStateHandle()
+        launch(saved = saved)
+        compose.onNodeWithContentDescription("Change view", substring = true).performClick()
+        compose.onNodeWithText("Agenda").performClick()
+        compose.onNodeWithText("Connect your calendars to see upcoming events.").assertIsDisplayed()
+        compose.runOnIdle { assertEquals("AGENDA", saved.get<String>("view")) }
+        compose.onNodeWithText("Search").performClick()
+        compose.onNodeWithText("Connect your calendars to search your events.").assertIsDisplayed()
+    }
     @Test fun horizontalSwipeMovesMonth() {
         launch()
         compose.onNodeWithTag("month-pager").performTouchInput { swipeLeft() }

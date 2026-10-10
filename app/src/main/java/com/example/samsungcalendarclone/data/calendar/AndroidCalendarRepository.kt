@@ -70,25 +70,56 @@ class AndroidCalendarRepository(context: Context) {
     }
 
     suspend fun events(start: LocalDate, endExclusive: LocalDate, zone: ZoneId): List<CalendarEvent> = withContext(Dispatchers.IO) {
-        // Cover both local timed events and UTC-encoded all-day events at range boundaries.
-        val begin = minOf(start.atStartOfDay(zone).toInstant().toEpochMilli(), start.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-        val end = maxOf(endExclusive.atStartOfDay(zone).toInstant().toEpochMilli(), endExclusive.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also {
-            ContentUris.appendId(it, begin)
-            ContentUris.appendId(it, end)
-        }.build()
         val result = mutableListOf<CalendarEvent>()
-        resolver.query(uri, arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.CALENDAR_ID, CalendarContract.Instances.TITLE, CalendarContract.Instances.BEGIN, CalendarContract.Instances.END,
-            CalendarContract.Instances.ALL_DAY, CalendarContract.Instances.DISPLAY_COLOR, CalendarContract.Instances.EVENT_LOCATION), "${CalendarContract.Instances.VISIBLE} = ? AND (${CalendarContract.Instances.STATUS} IS NULL OR ${CalendarContract.Instances.STATUS} != ?)",
+        resolver.query(instancesUri(CalendarContract.Instances.CONTENT_URI, start, endExclusive, zone).build(), instanceColumns, VISIBLE_NOT_CANCELLED,
             arrayOf("1", CalendarContract.Events.STATUS_CANCELED.toString()), "${CalendarContract.Instances.BEGIN} ASC")?.use { cursor ->
-            while (cursor.moveToNext()) result += CalendarEvent(
-                cursor.getLong(0), cursor.getLong(1), cursor.getString(2)?.takeIf { it.isNotBlank() } ?: "Untitled event",
-                cursor.getLong(3), cursor.getLong(4), cursor.getInt(5) != 0,
-                cursor.getInt(6), cursor.getString(7) ?: "",
-            )
+            while (cursor.moveToNext()) result += cursor.toCalendarEvent()
         }
         result
     }
+
+    // Cover both local timed events and UTC-encoded all-day events at range boundaries.
+    private fun instancesUri(base: android.net.Uri, start: LocalDate, endExclusive: LocalDate, zone: ZoneId): android.net.Uri.Builder {
+        val begin = minOf(start.atStartOfDay(zone).toInstant().toEpochMilli(), start.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        val end = maxOf(endExclusive.atStartOfDay(zone).toInstant().toEpochMilli(), endExclusive.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        return base.buildUpon().also {
+            ContentUris.appendId(it, begin)
+            ContentUris.appendId(it, end)
+        }
+    }
+
+    /**
+     * Occurrences in [start, endExclusive) whose title, description, location or attendees
+     * match [text], using the provider's documented instance search. At most [limit] rows.
+     */
+    suspend fun search(text: String, start: LocalDate, endExclusive: LocalDate, zone: ZoneId, limit: Int,
+                       hiddenCalendars: Set<Long> = emptySet()): List<CalendarEvent> = withContext(Dispatchers.IO) {
+        val uri = instancesUri(CalendarContract.Instances.CONTENT_SEARCH_URI, start, endExclusive, zone).appendPath(text).build()
+        // Filtering hidden calendars in the query keeps the limit for calendars the user can see.
+        val hidden = if (hiddenCalendars.isEmpty()) "" else
+            " AND ${CalendarContract.Instances.CALENDAR_ID} NOT IN (${hiddenCalendars.joinToString(",") { "?" }})"
+        val result = mutableListOf<CalendarEvent>()
+        resolver.query(uri, instanceColumns, VISIBLE_NOT_CANCELLED + hidden,
+            arrayOf("1", CalendarContract.Events.STATUS_CANCELED.toString()) + hiddenCalendars.map { it.toString() },
+            "${CalendarContract.Instances.BEGIN} ASC")?.use { cursor ->
+            while (result.size < limit && cursor.moveToNext()) result += cursor.toCalendarEvent()
+        }
+        result
+    }
+
+    private companion object {
+        const val VISIBLE_NOT_CANCELLED = "${CalendarContract.Instances.VISIBLE} = ? AND " +
+            "(${CalendarContract.Instances.STATUS} IS NULL OR ${CalendarContract.Instances.STATUS} != ?)"
+    }
+
+    private val instanceColumns = arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.CALENDAR_ID, CalendarContract.Instances.TITLE,
+        CalendarContract.Instances.BEGIN, CalendarContract.Instances.END, CalendarContract.Instances.ALL_DAY,
+        CalendarContract.Instances.DISPLAY_COLOR, CalendarContract.Instances.EVENT_LOCATION)
+
+    private fun android.database.Cursor.toCalendarEvent() = CalendarEvent(
+        getLong(0), getLong(1), getString(2)?.takeIf { it.isNotBlank() } ?: "Untitled event",
+        getLong(3), getLong(4), getInt(5) != 0, getInt(6), getString(7) ?: "",
+    )
 
     suspend fun create(event: NewEvent) = withContext(Dispatchers.IO) {
         ensure(event.allDay || runCatching { ZoneId.of(event.zone) }.isSuccess) { "Choose a valid event time zone." }

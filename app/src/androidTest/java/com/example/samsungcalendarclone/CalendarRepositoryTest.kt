@@ -343,6 +343,20 @@ class CalendarRepositoryTest {
         assertEquals(dump(), 3, ours().size)
     }
 
+    @Test fun searchFindsTitlesAndPlacesInRangeAndRespectsHiddenCalendars() = runBlocking {
+        val marker = "Zephyr${UUID.randomUUID().toString().take(8)}"
+        repository.create(draft().copy(title = "Fictional $marker review"))
+        repository.create(draft().copy(title = "Fictional lunch", location = "$marker cafe",
+            begin = draft().begin + 86_400_000, end = draft().end + 86_400_000))
+        repository.create(draft().copy(title = "Fictional $marker far away",
+            begin = Instant.parse("2032-01-01T09:00:00Z").toEpochMilli(), end = Instant.parse("2032-01-01T10:00:00Z").toEpochMilli()))
+        val found = repository.search(marker, LocalDate.of(2030, 1, 1), LocalDate.of(2031, 1, 1), ZoneOffset.UTC, 50)
+            .filter { it.calendarId == calendarId }
+        assertEquals(listOf("Fictional $marker review", "Fictional lunch"), found.map { it.title })
+        assertEquals(1, repository.search(marker, LocalDate.of(2030, 1, 1), LocalDate.of(2031, 1, 1), ZoneOffset.UTC, 1).size)
+        assertTrue(repository.search(marker, LocalDate.of(2030, 1, 1), LocalDate.of(2031, 1, 1), ZoneOffset.UTC, 50, setOf(calendarId)).isEmpty())
+    }
+
     @Test fun readOnlyCalendarRejectsWrites() = runBlocking {
         val id = ContentUris.parseId(repository.create(draft()))
         resolver.update(syncUri(calendarUri!!), ContentValues().apply { put(Calendars.CALENDAR_ACCESS_LEVEL, Calendars.CAL_ACCESS_READ) }, null, null)
