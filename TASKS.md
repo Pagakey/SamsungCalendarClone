@@ -10,7 +10,8 @@ it was planned, partially scaffolded, or delegated to the device calendar app.
 Current checkpoint: **process-death recovery and lifecycle-safe saves**, on top of
 repeating-event scopes, reminder controls and native details/editing, verified on Xiaomi.
 Midnight/clock-change refresh and Milestone 4 views (day, week, agenda, search) are in.
-Next: Milestone 5 reminders/notifications. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
+Milestone 5 reminder alerts are implemented (opt-in). Next: an end-to-end reminder
+test on the Xiaomi (needs the owner's OK), then Milestone 6 HyperOS help and widgets. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
 
 ## Project foundation
 
@@ -116,12 +117,13 @@ Next: Milestone 5 reminders/notifications. Advanced recurrence remains pending. 
 
 ## Milestone 5 — Reminders and notifications
 
-- [ ] Define reminder ownership and prevent duplicate alerts with the device calendar app.
-- [ ] Implement notification channels and contextual notification-permission requests.
-- [ ] Schedule reminders with legitimate Android APIs; define exact-alarm behavior/fallback.
-- [ ] Reschedule after event/reminder edits, deletion and calendar filter changes as appropriate.
-- [ ] Reschedule after reboot and time/time-zone changes.
-- [ ] Open the correct event occurrence from a notification.
+- [x] Define reminder ownership and prevent duplicate alerts: the provider schedules; this app's alerts are an opt-in setting (default off) in the Calendars sheet, explaining duplicates (owner asked to confirm the default on 2026-10-10).
+- [x] Implement a notification channel and contextual notification-permission requests (asked only when turning the setting on).
+- [x] Schedule reminders with legitimate Android APIs: the provider's own alarms deliver `ACTION_EVENT_REMINDER` (an implicit-broadcast exception); no exact-alarm permission or own AlarmManager use.
+- [x] Reschedule after edits/deletion: the provider rebuilds alarms from reminder rows; hidden calendars are filtered when an alert fires.
+- [ ] Device-verify rescheduling after reboot and time/time-zone changes (provider-owned; not yet observed on the Xiaomi).
+- [x] Open the correct event occurrence from a notification (`ACTION_OPEN_EVENT` → day selected, details opened; removed events get a notice).
+- [ ] End-to-end reminder on the Xiaomi with a fictional event (the device calendar app will also alert for it; needs the owner's OK and notification/calendar permission).
 - [ ] Test reminders under denied notification/alarm permissions, idle and reboot.
 
 ## Milestone 6 — Xiaomi / HyperOS reliability
@@ -144,8 +146,8 @@ Next: Milestone 5 reminders/notifications. Advanced recurrence remains pending. 
 - [x] Add leap-February, Sunday/Monday starts and both year-boundary date tests.
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
-- [x] Run all 35 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock, 5 view-layout and the starter test).
-- [x] Run all 47 Xiaomi instrumented tests successfully (18 provider, 9 screen, 4 details, 11 editor, 2 saved-state, 2 view-render and the starter test).
+- [x] Run all 38 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock, 5 view-layout, 3 alert-text and the starter test).
+- [x] Run all 49 Xiaomi instrumented tests successfully (18 provider, 9 screen, 4 details, 11 editor, 2 saved-state, 2 view-render, 2 reminder-alert and the starter test).
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.

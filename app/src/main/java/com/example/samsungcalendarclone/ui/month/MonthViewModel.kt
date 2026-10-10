@@ -8,6 +8,7 @@ import android.content.OperationApplicationException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import com.example.samsungcalendarclone.data.calendar.CalendarChangeRejected
+import com.example.samsungcalendarclone.data.reminders.ReminderAlerts
 import androidx.lifecycle.viewModelScope
 import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
 import com.example.samsungcalendarclone.domain.model.*
@@ -36,6 +37,9 @@ data class MonthUiState(
     val loading: Boolean = false,
     val error: String? = null,
     val view: CalendarView = CalendarView.MONTH,
+    /** Whether this app posts reminder notifications (off by default; the device calendar app also alerts). */
+    val appReminders: Boolean = false,
+    val notificationsAllowed: Boolean = false,
     /** How far the agenda reaches from the selected date; "Show more" extends it. */
     val agendaDays: Int = AGENDA_STEP_DAYS,
 ) {
@@ -119,7 +123,8 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
         fun allowed(permission: String) = ContextCompat.checkSelfPermission(getApplication(), permission) == PackageManager.PERMISSION_GRANTED
         val read = allowed(Manifest.permission.READ_CALENDAR)
         _state.update { it.copy(hasReadPermission = read, hasWritePermission = allowed(Manifest.permission.WRITE_CALENDAR),
-            today = LocalDate.now(), zone = ZoneId.systemDefault()) }
+            today = LocalDate.now(), zone = ZoneId.systemDefault(),
+            appReminders = ReminderAlerts.enabled(getApplication()), notificationsAllowed = ReminderAlerts.canPost(getApplication())) }
         if (read) {
             if (observer == null) observer = viewModelScope.launch {
                 try { repository.changes().collect { refresh() } }
@@ -173,6 +178,33 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
             CalendarView.AGENDA -> select(current.selectedDate.plusWeeks(sign))
         }
     }
+
+    fun setAppReminders(enabled: Boolean) {
+        ReminderAlerts.setEnabled(getApplication(), enabled)
+        _state.update { it.copy(appReminders = enabled, notificationsAllowed = ReminderAlerts.canPost(getApplication())) }
+    }
+
+    private val _openRequest = MutableStateFlow<CalendarEvent?>(null)
+    /** An occurrence to open in the details sheet, e.g. from a reminder notification. */
+    val openRequest = _openRequest.asStateFlow()
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice = _notice.asStateFlow()
+
+    /** Shows the occurrence's day and opens it; a removed event gets a short notice instead. */
+    fun openOccurrence(eventId: Long, begin: Long) {
+        viewModelScope.launch {
+            val day = java.time.Instant.ofEpochMilli(begin).atZone(_state.value.zone).toLocalDate()
+            val found = try {
+                repository.events(day.minusDays(1), day.plusDays(2), _state.value.zone).find { it.id == eventId && it.begin == begin }
+            } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+            if (found == null) { _notice.value = "This event is no longer in your calendar."; return@launch }
+            select(found.firstDate(_state.value.zone))
+            _openRequest.value = found
+        }
+    }
+
+    fun consumeOpenRequest() { _openRequest.value = null }
+    fun consumeNotice() { _notice.value = null }
 
     fun showMoreAgenda() {
         _state.update { it.copy(agendaDays = minOf(AGENDA_MAX_DAYS, it.agendaDays + AGENDA_STEP_DAYS)) }

@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
+import com.example.samsungcalendarclone.data.reminders.ReminderAlerts
 import com.example.samsungcalendarclone.ui.month.CalendarScreen
 import com.example.samsungcalendarclone.ui.month.MonthViewModel
 import com.example.samsungcalendarclone.ui.theme.SamsungCalendarCloneTheme
@@ -21,6 +22,22 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         model = ViewModelProvider(this)[MonthViewModel::class.java]
         setContent { SamsungCalendarCloneTheme { CalendarScreen(model) } }
+        // A restored activity already handled the intent that first launched it.
+        if (savedInstanceState == null) handle(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handle(intent)
+    }
+
+    /** A tapped reminder notification opens its occurrence. */
+    private fun handle(intent: Intent?) {
+        if (intent?.action != ReminderAlerts.ACTION_OPEN_EVENT) return
+        val id = intent.getLongExtra(ReminderAlerts.EXTRA_EVENT_ID, -1)
+        val begin = intent.getLongExtra(ReminderAlerts.EXTRA_BEGIN, -1)
+        if (id > 0 && begin >= 0) model.openOccurrence(id, begin)
     }
     private val clockChanges = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {

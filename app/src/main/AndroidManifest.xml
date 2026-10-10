@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -19,6 +20,7 @@
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.SamsungCalendarClone"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -26,6 +28,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The calendar provider sends this implicit broadcast when a reminder is due; it is on
+             Android's implicit-broadcast exception list. Spoofed broadcasts only trigger a lookup. -->
+        <receiver
+            android:name=".data.reminders.ReminderReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.EVENT_REMINDER" />
+                <data android:scheme="content" android:host="com.android.calendar" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

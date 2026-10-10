@@ -6,6 +6,7 @@ import android.content.ContentUris
 import android.content.Intent
 import android.net.Uri
 import android.provider.CalendarContract
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,6 +93,19 @@ fun CalendarScreen(model: MonthViewModel) {
         model.clearSave()
         snackbar.showSnackbar(done.message)
     }
+    val openRequest by model.openRequest.collectAsState()
+    val notice by model.notice.collectAsState()
+    LaunchedEffect(openRequest) {
+        val event = openRequest ?: return@LaunchedEffect
+        editing = null; editorOpen = false; searchOpen = false
+        details = null; openedEvent = event
+        model.consumeOpenRequest()
+    }
+    LaunchedEffect(notice) {
+        val message = notice ?: return@LaunchedEffect
+        model.consumeNotice()
+        snackbar.showSnackbar(message)
+    }
     val saving = save == SaveState.Running
     val saveError = (save as? SaveState.Failed)?.message
     var requestedRead by rememberSaveable { mutableStateOf(false) }
@@ -102,6 +116,22 @@ fun CalendarScreen(model: MonthViewModel) {
         pendingAdd = false
     }
     fun requestRead() { requestedRead = true; permission.launch(arrayOf(Manifest.permission.READ_CALENDAR)) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { model.refreshPermissions() }
+    fun setAppReminders(on: Boolean) {
+        model.setAppReminders(on)
+        if (!on) return
+        val notifications = Build.VERSION.SDK_INT >= 33 && !state.notificationsAllowed
+        // One system prompt for both when calendar access is also missing.
+        if (!state.hasReadPermission) {
+            requestedRead = true
+            val wanted = mutableListOf(Manifest.permission.READ_CALENDAR)
+            if (Build.VERSION.SDK_INT >= 33 && notifications) wanted += Manifest.permission.POST_NOTIFICATIONS
+            permission.launch(wanted.toTypedArray())
+        } else if (notifications) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    fun notificationSettings() {
+        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+    }
     fun add(startMinute: Int? = null) {
         newEventMinute = startMinute
         if (state.hasReadPermission && state.hasWritePermission) editorOpen = true
@@ -218,6 +248,8 @@ fun CalendarScreen(model: MonthViewModel) {
             }
         }
         if (!state.hasWritePermission && state.hasReadPermission) TextButton(onClick = ::settings, modifier = Modifier.padding(horizontal = 12.dp)) { Text("Manage calendar permissions") }
+        HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+        ReminderSettings(state, onToggle = ::setAppReminders, onNotificationSettings = ::notificationSettings)
         Spacer(Modifier.height(28.dp))
     }
     openedEvent?.let { occurrence ->
@@ -258,6 +290,26 @@ fun CalendarScreen(model: MonthViewModel) {
     if (editorOpen) EventEditor(state.selectedDate, state.calendars.filter { it.writable },
         onDismiss = { editorOpen = false; model.clearSave() }, onSave = model::create, saving = saving, saveError = saveError,
         startAt = newEventMinute)
+}
+
+/** The choice of which app alerts for reminders, with the follow-up a user needs for either answer. */
+@Composable
+private fun ReminderSettings(state: MonthUiState, onToggle: (Boolean) -> Unit, onNotificationSettings: () -> Unit) {
+    Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Reminder alerts from this app", Modifier.weight(1f), fontSize = 16.sp)
+            Switch(state.appReminders, onToggle, modifier = Modifier.semantics { contentDescription = "Reminder alerts from this app" })
+        }
+        Text(if (state.appReminders) "Your device calendar app may alert you too. Turn off its notifications to avoid duplicates."
+            else "Your device calendar app shows reminders. Turn this on to get them from this app instead.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (state.appReminders && !state.notificationsAllowed) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Notifications are blocked for this app.", Modifier.weight(1f), fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = onNotificationSettings) { Text("Settings") }
+        }
+        if (state.appReminders && !state.hasReadPermission) Text("Allow calendar access so reminders can be read.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+    }
 }
 
 /** Title row: year and the visible month, week or day, with page arrows. */

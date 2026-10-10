@@ -324,3 +324,40 @@ Next: run `ViewsRenderTest` with the phone unlocked and review the captures; the
   **OK (47 tests)**. The two-pane layout has not yet been seen on the device in landscape.
 
 Next: Milestone 5 (reminders and notifications).
+
+## 2026-10-10 — Opt-in reminder notifications (Claude Code)
+
+### Decision
+
+- The device calendar app already alerts for every provider reminder. Asked the owner how
+  this app should behave, recommending an opt-in setting (default off), and built that while
+  waiting for an answer.
+
+### Changes
+
+- `data/reminders/ReminderAlerts.kt`: `ReminderReceiver` handles the provider's
+  `ACTION_EVENT_REMINDER` (manifest receiver; the action is an implicit-broadcast exception).
+  It reads `CalendarAlerts` rows for the alarm time (any state, so another app marking them
+  fired doesn't hide them), merges duplicate reminders per occurrence, skips calendars hidden
+  in this app, and posts one high-importance notification per occurrence on the "reminders"
+  channel. Nothing is written back to `CalendarAlerts`.
+- No AlarmManager or exact-alarm permission: the provider schedules, and reschedules after
+  edits, reboots and clock changes. `POST_NOTIFICATIONS` is declared and requested only when
+  the user turns the setting on (with calendar access in the same prompt if needed).
+- Calendars sheet: "Reminder alerts from this app" switch, duplicate-alert explanation, and a
+  link to the app's notification settings when notifications are blocked.
+- Tapping a notification (`MainActivity` is now `singleTop`) selects the day and opens the
+  occurrence's details; a removed event shows a snackbar.
+- `domain/model/ReminderAlert.kt`: notification text ("Today, 09:00 – 10:00 · Studio") and a
+  stable per-occurrence notification ID. New original monochrome icon `ic_notification_event`.
+
+### Verification
+
+- Build/lint 0 errors, 19 warnings (two new ones fixed); 38 JVM tests (3 alert-text tests).
+- Xiaomi **OK (49 tests)**: new tests insert `CalendarAlerts` rows for a fictional event in a
+  temporary LOCAL calendar, check the query and the built notification (never posted), and
+  check that nothing happens while the setting is off. No real alarm fired.
+- Not yet observed: a real provider broadcast on the Xiaomi (HyperOS may differ), reboot and
+  time-zone rescheduling, and behaviour with denied permissions.
+
+Next: with the owner's OK, an end-to-end reminder test on the Xiaomi; then HyperOS help.
