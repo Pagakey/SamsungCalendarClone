@@ -10,3 +10,7 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+# WorkManager 2.7 (pulled in by Glance) opens its Room database by instantiating the generated
+# WorkDatabase_Impl reflectively. Room 2.2's own rule keeps only the class name, and R8 full mode
+# then removes the no-argument constructor, which crashed the optimized build at startup.
+-keep class * extends androidx.room.RoomDatabase { <init>(); }

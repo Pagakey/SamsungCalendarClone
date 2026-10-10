@@ -124,7 +124,8 @@ next: see the widgets on a real home screen, then the release-readiness items. A
 - [x] Reschedule after edits/deletion: the provider rebuilds alarms from reminder rows; hidden calendars are filtered when an alert fires.
 - [ ] Device-verify rescheduling after reboot and time/time-zone changes (provider-owned; not yet observed on the Xiaomi).
 - [x] Open the correct event occurrence from a notification (`ACTION_OPEN_EVENT` → day selected, details opened; removed events get a notice).
-- [ ] End-to-end reminder on the Xiaomi with a fictional event (the device calendar app will also alert for it; needs the owner's OK and notification/calendar permission).
+- [x] End-to-end reminder on the Xiaomi with a fictional event while the app process runs (`ReminderEndToEndTest`, opt-in): notification posted 3 s after the alarm time.
+- [ ] Recheck a reminder with the app not running once Autostart is allowed: with Autostart off, HyperOS logged "process is not permitted to auto start" and dropped the broadcast (only the Xiaomi Calendar alerted).
 - [ ] Test reminders under denied notification/alarm permissions, idle and reboot.
 
 ## Milestone 6 — Xiaomi / HyperOS reliability
@@ -149,20 +150,21 @@ next: see the widgets on a real home screen, then the release-readiness items. A
 - [x] Add leap-February, Sunday/Monday starts and both year-boundary date tests.
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
-- [x] Run all 41 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock, 5 view-layout, 3 alert-text, 3 widget-data and the starter test).
+- [x] Run all 40 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock, 5 view-layout, 3 alert-text and 3 widget-data tests; the starter test was removed).
 - [x] Run all 52 Xiaomi instrumented tests successfully (18 provider, 9 screen, 4 details, 11 editor, 2 saved-state, 2 view-render, 2 reminder-alert, 3 reminder-settings and the starter test).
-- [ ] Rerun the full 56-test suite with the 4 widget tests on an unlocked phone (last run: 55 passed; 1 editor test failed as the phone dozed and locked).
+- [x] Rerun the full suite on an unlocked phone: **OK (59 tests)**, of which 2 are opt-in reminder checks skipped by default.
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.
 - [x] Run `assembleDebug` and `lintDebug`: successful, zero lint errors.
 - [x] Install final debug APK and confirm a cold launch on Xiaomi Android 16 / API 36.
 - [x] Visually verify the final installed app launches with READ/WRITE_CALENDAR ungranted.
-- [ ] Reduce the remaining 19 lint warnings without unnecessary toolchain upgrades.
-- [ ] Replace starter assertions with meaningful package/build smoke coverage if useful.
+- [x] Reduce lint warnings without toolchain upgrades: 12 remain, all dependency/Gradle version notices.
+- [x] Replace starter assertions with `AppSmokeTest` (launcher, permissions incl. no exact-alarm/Internet, reminder receiver, both widget providers).
 - [ ] Complete a full permission-denial/recovery and no-account device regression checklist.
-- [ ] Run a signed release build and verify optimized/minified behavior.
-- [ ] Review backup/privacy behavior for preferences and future stored event data.
+- [x] Verify the optimized (R8) release build on the Xiaomi, signed locally with the debug key: it crashed at startup until Room's generated database constructor was kept; then launched (316 ms cold) and survived switching every view and opening search.
+- [ ] Create a real release signing configuration and key with the owner (kept out of Git).
+- [x] Review backup/privacy behavior: calendar data stays in the provider; `calendar_preferences.xml` (device-specific calendar IDs, reminder switch) is excluded from cloud backup and device transfer.
 
 ## GitHub portfolio preparation (publication is for later)
 

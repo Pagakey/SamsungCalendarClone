@@ -4,7 +4,7 @@ import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.ContentUris
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import android.provider.CalendarContract
 import android.os.Build
 import android.provider.Settings
@@ -142,7 +142,7 @@ fun CalendarScreen(model: MonthViewModel) {
         }
     }
     fun settings() {
-        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()))
     }
     fun openExternalEvent(event: CalendarEvent) {
         try {

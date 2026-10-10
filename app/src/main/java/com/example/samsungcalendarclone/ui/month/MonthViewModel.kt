@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import android.content.OperationApplicationException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -242,7 +243,7 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
     fun today() = select(LocalDate.now())
     fun toggleCalendar(id: Long) {
         _state.update { it.copy(hiddenCalendars = if (id in it.hiddenCalendars) it.hiddenCalendars - id else it.hiddenCalendars + id) }
-        preferences.edit().putStringSet("hidden", _state.value.hiddenCalendars.map { it.toString() }.toSet()).apply()
+        preferences.edit { putStringSet("hidden", _state.value.hiddenCalendars.map { it.toString() }.toSet()) }
         refresh()
         WidgetUpdates.request(getApplication())
         if (_search.value.query.isNotBlank()) search(_search.value.query)

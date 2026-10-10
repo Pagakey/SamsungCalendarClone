@@ -81,7 +81,7 @@ local calendars; they do not create events in personal accounts.
 For a test run that preserves the installation, see the manual ADB workflow in
 [the native event checkpoint](docs/NATIVE_EVENT_CHECKPOINT.md).
 
-Last verified on 2026-10-10: **38 JVM tests and 52 device tests passed**;
+Last verified on 2026-10-10: **40 JVM tests and 57 device tests passed** (plus 2 opt-in reminder checks);
 `assembleDebug` and `lintDebug` passed with zero lint errors and 19 warnings.
 
 Reports are generated under `app/build/reports/`; machine outputs are ignored by Git.

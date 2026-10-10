@@ -403,3 +403,38 @@ Next: the end-to-end reminder check once the owner agrees.
   reported "not displayed"; a rerun of the editor class then failed with "No compose
   hierarchies found", and the phone was found dozing and locked. Rerun pending an unlocked phone.
 - Not yet done: placing the widgets on the real home screen.
+
+## 2026-10-10 — Real reminders, release build and cleanup (Claude Code)
+
+### Reminder delivery on the Xiaomi (owner approved: "Run that check and anything else you want")
+
+- Granted the app READ_CALENDAR and POST_NOTIFICATIONS with `pm grant` (they remain granted;
+  the owner can revoke them in App info). `ReminderEndToEndTest` (opt-in, `-e e2e true`) put a
+  fictional event with a one-minute reminder in a temporary LOCAL calendar: this app's
+  notification appeared **3 s after the alarm time**. The calendar was deleted afterwards.
+- App-not-running check over adb (`content insert` as shell, app process killed but not
+  force-stopped): the provider's alarm fired, but HyperOS logged
+  `Unable to launch app com.example.samsungcalendarclone ... for broadcast EVENT_REMINDER:
+  process is not permitted to auto start`, so only Xiaomi Calendar alerted. This confirms the
+  in-app Autostart guidance. Temporary calendar and its event deleted; switch set back off.
+
+### Release build
+
+- Built `assembleRelease` (R8), aligned and signed it locally with the debug key outside the
+  repo, and installed it. It crashed at startup: WorkManager 2.7 (via Glance) could not create
+  `WorkDatabase` because R8 full mode removed the generated Room class's constructor (Room 2.2's
+  rule keeps only the class name). Added `-keep class * extends androidx.room.RoomDatabase { <init>(); }`
+  to `keepRules/rules.keep`. The rebuilt release launched (316 ms cold start) and survived
+  switching Month/Week/Day/Agenda and opening search. The debug build was reinstalled after.
+
+### Cleanup
+
+- Removed unused starter colours, the starter unit test and the redundant activity label; two
+  KTX suggestions applied. Lint: 0 errors, 12 warnings (all version notices).
+- `AppSmokeTest` replaces the starter instrumented test.
+- Backup rules now exclude `calendar_preferences.xml` (device-specific calendar IDs).
+
+### Verification
+
+- 40 JVM tests passed. Xiaomi full suite **OK (59 tests)**, with the 2 opt-in reminder classes
+  skipped by assumption.
