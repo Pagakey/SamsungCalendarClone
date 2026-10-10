@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">SamsungCalendarClone</string>
+    <string name="agenda_widget_label">Agenda</string>
+    <string name="agenda_widget_description">Your next two weeks of events</string>
+    <string name="month_widget_label">Month</string>
+    <string name="month_widget_description">This month, with days that have events marked</string>
 </resources>

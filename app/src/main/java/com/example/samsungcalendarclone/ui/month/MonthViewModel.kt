@@ -10,6 +10,7 @@ import androidx.lifecycle.SavedStateHandle
 import com.example.samsungcalendarclone.data.calendar.CalendarChangeRejected
 import com.example.samsungcalendarclone.data.reminders.DeviceSetup
 import com.example.samsungcalendarclone.data.reminders.ReminderAlerts
+import com.example.samsungcalendarclone.ui.widget.WidgetUpdates
 import androidx.lifecycle.viewModelScope
 import com.example.samsungcalendarclone.data.calendar.AndroidCalendarRepository
 import com.example.samsungcalendarclone.domain.model.*
@@ -124,6 +125,8 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
     fun refreshPermissions() {
         fun allowed(permission: String) = ContextCompat.checkSelfPermission(getApplication(), permission) == PackageManager.PERMISSION_GRANTED
         val read = allowed(Manifest.permission.READ_CALENDAR)
+        // Widgets show "open to connect" until access is granted, so a change must reach them.
+        if (read != _state.value.hasReadPermission) WidgetUpdates.request(getApplication())
         _state.update { it.copy(hasReadPermission = read, hasWritePermission = allowed(Manifest.permission.WRITE_CALENDAR),
             today = LocalDate.now(), zone = ZoneId.systemDefault(),
             appReminders = ReminderAlerts.enabled(getApplication()), notificationsAllowed = ReminderAlerts.canPost(getApplication()),
@@ -241,6 +244,7 @@ class MonthViewModel(application: Application, private val saved: SavedStateHand
         _state.update { it.copy(hiddenCalendars = if (id in it.hiddenCalendars) it.hiddenCalendars - id else it.hiddenCalendars + id) }
         preferences.edit().putStringSet("hidden", _state.value.hiddenCalendars.map { it.toString() }.toSet()).apply()
         refresh()
+        WidgetUpdates.request(getApplication())
         if (_search.value.query.isNotBlank()) search(_search.value.query)
     }
 

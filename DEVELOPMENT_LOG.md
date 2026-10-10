@@ -373,3 +373,33 @@ Next: with the owner's OK, an end-to-end reminder test on the Xiaomi; then Hyper
   stored preference is touched. Xiaomi **OK (52 tests)**; lint 0 errors, 19 warnings.
 
 Next: the end-to-end reminder check once the owner agrees.
+
+## 2026-10-10 — Agenda and month widgets (Claude Code)
+
+### Changes
+
+- Added Glance 1.1.1 (`androidx.glance:glance-appwidget`) and declared WorkManager 2.7.1, the
+  version Glance already pulls in. `ui/widget/CalendarWidgets.kt`:
+  - `AgendaWidget`: two weeks of days with events (`agendaDays` drops events that already
+    ended today; 40-event cap); tapping an event opens its details, a day header opens that date.
+  - `MonthWidget`: six-week grid (`monthCells`), today highlighted, dots for days with events.
+  - Both honour the app's hidden calendars and show "open to connect" without calendar access.
+  - Refresh: a WorkManager content-URI trigger on the calendar provider (re-enqueued after
+    each update; WorkManager instead of a raw JobScheduler job so IDs can't collide with
+    Glance's own work), an inexact alarm at the next local midnight, and a receiver for
+    time/time-zone/date/locale changes. Hidden-calendar and permission changes also refresh.
+  - `MainActivity` handles `OPEN_DATE` from the widgets.
+- Provider XML with resize ranges and `targetCell*` (API 31+, marked with tools:targetApi).
+
+### Verification
+
+- Build OK; lint 0 errors, 21 warnings (the two new ones are dependency-update notices for
+  Glance and WorkManager). 41 JVM tests (3 new widget-data tests).
+- `WidgetRenderTest` on the Xiaomi: **OK (4 tests)**. The month widget composed to RemoteViews
+  and inflated correctly (dynamic colours from the wallpaper). The agenda's list is filled by a
+  launcher's RemoteViews service, so its offscreen capture shows only the header; its content is
+  checked with Glance's test host (`glance-appwidget-testing`, test-only).
+- Full suite: 55 of 56 passed. `newTimedEventDefaultsToTenMinuteReminderThatCanBeChanged`
+  reported "not displayed"; a rerun of the editor class then failed with "No compose
+  hierarchies found", and the phone was found dozing and locked. Rerun pending an unlocked phone.
+- Not yet done: placing the widgets on the real home screen.

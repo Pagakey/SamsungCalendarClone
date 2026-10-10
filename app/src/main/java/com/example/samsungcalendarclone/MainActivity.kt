@@ -12,6 +12,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.ViewModelProvider
 import com.example.samsungcalendarclone.data.reminders.ReminderAlerts
 import com.example.samsungcalendarclone.ui.month.CalendarScreen
+import com.example.samsungcalendarclone.ui.widget.ACTION_OPEN_DATE
+import com.example.samsungcalendarclone.ui.widget.EXTRA_DATE
 import com.example.samsungcalendarclone.ui.month.MonthViewModel
 import com.example.samsungcalendarclone.ui.theme.SamsungCalendarCloneTheme
 
@@ -34,6 +36,10 @@ class MainActivity : ComponentActivity() {
 
     /** A tapped reminder notification opens its occurrence. */
     private fun handle(intent: Intent?) {
+        if (intent?.action == ACTION_OPEN_DATE) {
+            intent.getLongExtra(EXTRA_DATE, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let { model.select(java.time.LocalDate.ofEpochDay(it)) }
+            return
+        }
         if (intent?.action != ReminderAlerts.ACTION_OPEN_EVENT) return
         val id = intent.getLongExtra(ReminderAlerts.EXTRA_EVENT_ID, -1)
         val begin = intent.getLongExtra(ReminderAlerts.EXTRA_BEGIN, -1)

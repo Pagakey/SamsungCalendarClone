@@ -21,6 +21,7 @@ running Android 16. The larger feature roadmap is still in progress.
 - Reminder controls in the editor (preset times, per-calendar limits), saved atomically with the event.
 - Month, week, day and agenda views sharing one selected date and calendar filters.
 - Search across event titles, places, notes and guests, from a year back to two years ahead.
+- Agenda and month home-screen widgets that follow the app's calendar filters.
 - Optional reminder notifications from this app (off by default, since the device calendar
   app already alerts); Android's calendar provider schedules them, so no exact-alarm permission is needed.
 - Repeating events: edit or delete this event, this and following events, or all events.
@@ -28,7 +29,7 @@ running Android 16. The larger feature roadmap is still in progress.
   saves keep running through rotation and are safe to retry.
 - Explicit device-calendar handoff for repeat-rule changes and series this app can't change safely.
 
-Editing the repeat rule itself and widgets remain future work. End-to-end reminder delivery
+Editing the repeat rule itself remains future work, and the widgets have not yet been checked on a real home screen. End-to-end reminder delivery
 has not yet been observed on a device.
 
 ## Build and run

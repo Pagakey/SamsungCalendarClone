@@ -11,7 +11,8 @@ Current checkpoint: **process-death recovery and lifecycle-safe saves**, on top 
 repeating-event scopes, reminder controls and native details/editing, verified on Xiaomi.
 Midnight/clock-change refresh and Milestone 4 views (day, week, agenda, search) are in.
 Milestone 5 reminder alerts are implemented (opt-in). Next: an end-to-end reminder
-test on the Xiaomi (needs the owner's OK), then Milestone 6 HyperOS help and widgets. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
+test on the Xiaomi (needs the owner's OK). HyperOS help and agenda/month widgets are in;
+next: see the widgets on a real home screen, then the release-readiness items. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
 
 ## Project foundation
 
@@ -135,19 +136,22 @@ test on the Xiaomi (needs the owner's OK), then Milestone 6 HyperOS help and wid
 
 ## Milestone 7 — Widgets
 
-- [ ] Month widget.
-- [ ] Agenda widget.
-- [ ] Light/dark appearance and resize support.
-- [ ] Calendar filtering and transparency options where practical.
-- [ ] Refresh widgets after event/date/time-zone changes and open the relevant app date/event.
+- [x] Month widget (six-week grid, today highlighted, dots on days with events; a day opens the app there).
+- [x] Agenda widget (next two weeks, ended events of today dropped, 40-event cap; an event opens its details).
+- [x] Light/dark appearance and resize support (Glance theme with dynamic colours; resizable providers).
+- [x] Calendar filtering (widgets honour the app's hidden calendars).
+- [ ] Transparency/background options for the widgets.
+- [x] Refresh widgets after event changes (WorkManager content-URI trigger), at midnight (inexact alarm), and on time/time-zone/locale changes; open the relevant app date/event.
+- [ ] Check both widgets on the Xiaomi home screen, including resize and refresh after an edit (the agenda list only renders in a launcher).
 
 ## Verification and release readiness
 
 - [x] Add leap-February, Sunday/Monday starts and both year-boundary date tests.
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
-- [x] Run all 38 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock, 5 view-layout, 3 alert-text and the starter test).
+- [x] Run all 41 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock, 5 view-layout, 3 alert-text, 3 widget-data and the starter test).
 - [x] Run all 52 Xiaomi instrumented tests successfully (18 provider, 9 screen, 4 details, 11 editor, 2 saved-state, 2 view-render, 2 reminder-alert, 3 reminder-settings and the starter test).
+- [ ] Rerun the full 56-test suite with the 4 widget tests on an unlocked phone (last run: 55 passed; 1 editor test failed as the phone dozed and locked).
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.
