@@ -3,6 +3,7 @@ package com.example.samsungcalendarclone.ui.views
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -59,6 +60,7 @@ fun TimeGrid(
     onStep: (forward: Boolean) -> Unit,
     onOpenDay: ((LocalDate) -> Unit)?,
     modifier: Modifier = Modifier,
+    onCreateAt: ((LocalDate, Int) -> Unit)? = null,
 ) {
     val week = days.size > 1
     val hourHeight = if (week) 48.dp else 60.dp
@@ -100,12 +102,18 @@ fun TimeGrid(
             Column(Modifier.width(gutter)) {
                 (0 until 24).forEach { hour ->
                     Box(Modifier.height(hourHeight).fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
-                        if (hour > 0) Text("%02d:00".format(hour), Modifier.padding(end = 6.dp).offset(y = (-7).dp), fontSize = 10.sp,
+                        if (hour > 0) Text("%02d:00".format(hour), Modifier.padding(end = 6.dp).offset(y = (-9).dp), fontSize = 10.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-            days.forEach { day -> DayColumn(day, events[day].orEmpty(), today, zone, hourHeight, week, onOpenEvent, Modifier.weight(1f)) }
+            days.forEach { day ->
+                DayColumn(day, events[day].orEmpty(), today, zone, hourHeight, week, onOpenEvent, Modifier.weight(1f).then(
+                    if (onCreateAt == null) Modifier else Modifier.pointerInput(day) {
+                        // Taps on events are consumed by their chips; an empty slot starts a new event on the half hour.
+                        detectTapGestures { offset -> onCreateAt(day, ((offset.y / hourHeight.toPx() * 60).toInt() / 30 * 30).coerceIn(0, MINUTES_PER_DAY - 30)) }
+                    }))
+            }
         }
     }
 }

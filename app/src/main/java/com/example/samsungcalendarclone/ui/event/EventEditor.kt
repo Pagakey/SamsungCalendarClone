@@ -25,7 +25,8 @@ import java.time.format.DateTimeFormatter
 
 @Composable
 fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () -> Unit, onSave: (NewEvent) -> Unit, initial: NewEvent? = null,
-                allDayLocked: Boolean = false, saving: Boolean = false, saveError: String? = null) {
+                allDayLocked: Boolean = false, saving: Boolean = false, saveError: String? = null,
+                startAt: Int? = null) {
     val zone = remember(initial?.zone) { ZoneId.of(initial?.zone ?: ZoneId.systemDefault().id) }
     val dateZone = if (initial?.allDay == true) ZoneOffset.UTC else zone
     val initialStart = initial?.let { Instant.ofEpochMilli(it.begin).atZone(dateZone) }
@@ -34,10 +35,14 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
     var location by rememberSaveable { mutableStateOf(initial?.location.orEmpty()) }
     var notes by rememberSaveable { mutableStateOf(initial?.notes.orEmpty()) }
     var calendarId by rememberSaveable { mutableStateOf(initial?.calendarId ?: calendars.firstOrNull()?.id) }
+    // A new event starts at a tapped time slot, or 09:00, and lasts an hour (possibly past midnight).
+    val newStart = startAt ?: (9 * 60)
+    val newEndDay = date.toEpochDay() + (newStart + 60) / (24 * 60)
+    val newEnd = (newStart + 60) % (24 * 60)
     var startDay by rememberSaveable { mutableLongStateOf(initialStart?.toLocalDate()?.toEpochDay() ?: date.toEpochDay()) }
-    var endDay by rememberSaveable { mutableLongStateOf(initialEnd?.toLocalDate()?.toEpochDay() ?: date.toEpochDay()) }
-    var startMinute by rememberSaveable { mutableIntStateOf(initialStart?.let { it.hour * 60 + it.minute } ?: 9 * 60) }
-    var endMinute by rememberSaveable { mutableIntStateOf(initialEnd?.let { it.hour * 60 + it.minute } ?: 10 * 60) }
+    var endDay by rememberSaveable { mutableLongStateOf(initialEnd?.toLocalDate()?.toEpochDay() ?: newEndDay) }
+    var startMinute by rememberSaveable { mutableIntStateOf(initialStart?.let { it.hour * 60 + it.minute } ?: newStart) }
+    var endMinute by rememberSaveable { mutableIntStateOf(initialEnd?.let { it.hour * 60 + it.minute } ?: newEnd) }
     var allDay by rememberSaveable { mutableStateOf(initial?.allDay ?: false) }
     val initialReminders = remember(initial) {
         initial?.reminders ?: defaultReminders(false, calendars.firstOrNull()?.newReminderMethod ?: REMINDER_ALERT)
@@ -54,9 +59,9 @@ fun EventEditor(date: LocalDate, calendars: List<DeviceCalendar>, onDismiss: () 
     val dirty = title != initial?.title.orEmpty() || location != initial?.location.orEmpty() || notes != initial?.notes.orEmpty() ||
         calendarId != (initial?.calendarId ?: calendars.firstOrNull()?.id) || allDay != (initial?.allDay ?: false) ||
         startDay != (initialStart?.toLocalDate()?.toEpochDay() ?: date.toEpochDay()) ||
-        endDay != (initialEnd?.toLocalDate()?.toEpochDay() ?: date.toEpochDay()) ||
-        startMinute != (initialStart?.let { it.hour * 60 + it.minute } ?: 9 * 60) ||
-        endMinute != (initialEnd?.let { it.hour * 60 + it.minute } ?: 10 * 60) ||
+        endDay != (initialEnd?.toLocalDate()?.toEpochDay() ?: newEndDay) ||
+        startMinute != (initialStart?.let { it.hour * 60 + it.minute } ?: newStart) ||
+        endMinute != (initialEnd?.let { it.hour * 60 + it.minute } ?: newEnd) ||
         !sameReminders(reminders, initialReminders)
     val calendar = calendars.find { it.id == calendarId }
     val reminderLimitReached = calendar != null && calendar.maxReminders > 0 && reminders.size >= calendar.maxReminders

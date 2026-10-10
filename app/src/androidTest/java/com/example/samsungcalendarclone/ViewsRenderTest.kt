@@ -90,7 +90,9 @@ class ViewsRenderTest {
         capture("day-light.png")
         agenda = true
         compose.onNodeWithText("Lunch with Alex").assertIsDisplayed()
-        compose.onNodeWithText("Show more").assertExists()
         capture("agenda-light.png")
+        // Lazy rows past the screen aren't composed until scrolled to.
+        compose.onNodeWithTag("agenda").performScrollToNode(hasText("Show more"))
+        compose.onNodeWithText("Show more").assertIsDisplayed()
     }
 }

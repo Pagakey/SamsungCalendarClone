@@ -85,6 +85,7 @@ fun CalendarScreen(model: MonthViewModel) {
     var viewMenuOpen by remember { mutableStateOf(false) }
     val search by model.search.collectAsState()
     var editorOpen by rememberSaveable { mutableStateOf(false) }
+    var newEventMinute by rememberSaveable { mutableStateOf<Int?>(null) }
     LaunchedEffect(save) {
         val done = save as? SaveState.Done ?: return@LaunchedEffect
         editorOpen = false; editing = null; openedEvent = null; details = null
@@ -101,7 +102,8 @@ fun CalendarScreen(model: MonthViewModel) {
         pendingAdd = false
     }
     fun requestRead() { requestedRead = true; permission.launch(arrayOf(Manifest.permission.READ_CALENDAR)) }
-    fun add() {
+    fun add(startMinute: Int? = null) {
+        newEventMinute = startMinute
         if (state.hasReadPermission && state.hasWritePermission) editorOpen = true
         else {
             pendingAdd = true; requestedRead = true
@@ -124,7 +126,7 @@ fun CalendarScreen(model: MonthViewModel) {
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            FloatingActionButton(onClick = ::add, shape = CircleShape,
+            FloatingActionButton(onClick = { add() }, shape = CircleShape,
                 containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(60.dp).semantics { contentDescription = "Add event" }) {
                 Text("+", fontSize = 34.sp, fontWeight = FontWeight.Light)
@@ -133,7 +135,9 @@ fun CalendarScreen(model: MonthViewModel) {
     ) { padding ->
         BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
             val compact = maxHeight < 600.dp
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).height(maxOf(maxHeight, 620.dp))) {
+            // Wide landscape windows fit the views side by side; narrow short windows scroll instead.
+            val wide = maxWidth >= 720.dp && maxWidth > maxHeight
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).height(if (wide) maxHeight else maxOf(maxHeight, 620.dp))) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { calendarsOpen = true }) { Text("Calendars", color = MaterialTheme.colorScheme.onSurface) }
                     Spacer(Modifier.weight(1f))
@@ -165,7 +169,7 @@ fun CalendarScreen(model: MonthViewModel) {
                 }
                 val open: (CalendarEvent) -> Unit = { event -> details = null; openedEvent = event }
                 when (state.view) {
-                    CalendarView.MONTH -> MonthContent(state, compact, model, open, Modifier.weight(1f))
+                    CalendarView.MONTH -> MonthContent(state, compact, wide, model, open, Modifier.weight(1f))
                     CalendarView.WEEK, CalendarView.DAY -> {
                         Box(Modifier.fillMaxWidth().height(2.dp)) {
                             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .45f))
@@ -173,7 +177,8 @@ fun CalendarScreen(model: MonthViewModel) {
                         TimeGrid(if (state.view == CalendarView.WEEK) weekDates(state.selectedDate) else listOf(state.selectedDate),
                             state.events, state.today, state.selectedDate, state.zone, onOpenEvent = open, onStep = model::step,
                             onOpenDay = { day: LocalDate -> model.select(day); model.showView(CalendarView.DAY) }.takeIf { state.view == CalendarView.WEEK },
-                            modifier = Modifier.weight(1f).fillMaxWidth())
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            onCreateAt = { day, minute -> model.select(day); add(minute) })
                     }
                     CalendarView.AGENDA -> {
                         Box(Modifier.fillMaxWidth().height(2.dp)) {
@@ -251,7 +256,8 @@ fun CalendarScreen(model: MonthViewModel) {
         onConnect = { searchOpen = false; if (requestedRead) settings() else requestRead() },
         onDismiss = { searchOpen = false })
     if (editorOpen) EventEditor(state.selectedDate, state.calendars.filter { it.writable },
-        onDismiss = { editorOpen = false; model.clearSave() }, onSave = model::create, saving = saving, saveError = saveError)
+        onDismiss = { editorOpen = false; model.clearSave() }, onSave = model::create, saving = saving, saveError = saveError,
+        startAt = newEventMinute)
 }
 
 /** Title row: year and the visible month, week or day, with page arrows. */
@@ -280,7 +286,7 @@ private fun ViewHeader(state: MonthUiState, compact: Boolean, onStep: (Boolean) 
 
 /** Swipeable six-week grid with the selected day's events underneath. */
 @Composable
-private fun MonthContent(state: MonthUiState, compact: Boolean, model: MonthViewModel, onOpenEvent: (CalendarEvent) -> Unit, modifier: Modifier) {
+private fun MonthContent(state: MonthUiState, compact: Boolean, wide: Boolean, model: MonthViewModel, onOpenEvent: (CalendarEvent) -> Unit, modifier: Modifier) {
     val anchor = remember { YearMonth.now() }
     fun page(month: YearMonth) = (1200 + ChronoUnit.MONTHS.between(anchor, month).toInt()).coerceIn(0, 2400)
     // Created when the month view appears, so it opens on the month the other views left selected.
@@ -299,7 +305,7 @@ private fun MonthContent(state: MonthUiState, compact: Boolean, model: MonthView
             if (target == null || target == settled) model.showMonth(anchor.plusMonths((settled - 1200).toLong()))
         }
     }
-    Column(modifier) {
+    val grid: @Composable ColumnScope.() -> Unit = {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             (1..7).forEach { day ->
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -315,8 +321,22 @@ private fun MonthContent(state: MonthUiState, compact: Boolean, model: MonthView
             val month = anchor.plusMonths((page - 1200).toLong())
             MonthGrid(month, state, Modifier.fillMaxSize()) { date -> model.select(date) }
         }
+    }
+    // Landscape and wide windows put the selected day beside the grid instead of under it.
+    if (wide) Row(modifier) {
+        Column(Modifier.weight(1.4f).fillMaxHeight(), content = grid)
+        VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        SelectedDayEvents(state, compact, model, onOpenEvent, Modifier.weight(1f).fillMaxHeight().padding(top = 8.dp))
+    } else Column(modifier) {
+        grid()
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Column(Modifier.fillMaxWidth().height(if (compact) 115.dp else 194.dp).padding(top = 16.dp)) {
+        SelectedDayEvents(state, compact, model, onOpenEvent, Modifier.fillMaxWidth().height(if (compact) 115.dp else 194.dp).padding(top = 16.dp))
+    }
+}
+
+@Composable
+private fun SelectedDayEvents(state: MonthUiState, compact: Boolean, model: MonthViewModel, onOpenEvent: (CalendarEvent) -> Unit, modifier: Modifier) {
+    Column(modifier) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(state.selectedDate.format(DateTimeFormatter.ofPattern("EEEE, d MMM")), fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 if (state.selectedDate == state.today) Text("  ·  Today", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
@@ -345,7 +365,6 @@ private fun MonthContent(state: MonthUiState, compact: Boolean, model: MonthView
                     }
                 }
             }
-        }
     }
 }
 

@@ -306,3 +306,21 @@ Next: Milestone 4 — day, week and agenda views with shared navigation, then se
   unlocked screen and remains unchecked. One earlier capture confirmed overlap columns and labels.
 
 Next: run `ViewsRenderTest` with the phone unlocked and review the captures; then Milestone 5.
+
+## 2026-10-10 — View captures, tap-to-create and landscape (Claude Code)
+
+- After the owner unlocked the phone, `ViewsRenderTest` passed. Reviewed the fictional
+  week (light/dark), day and agenda captures (kept outside the repo): overlap columns, the
+  all-day strip, today's marker and the current-time line render as intended. Hour labels
+  were nudged up to centre on their lines; event chips gained a solid calendar-colour edge.
+  Narrow overlapping chips in week view still break titles mid-word (new unchecked task).
+- Tapping an empty slot in Day/Week view opens the editor at that half hour for one hour
+  (`EventEditor(startAt = ...)`, ending after midnight when needed).
+- The phone was in landscape during one full run: 7 UI tests failed because content below
+  the fold was not displayed, and one all-day switch tap missed, saving a timed event.
+  Fixes: tests now scroll to off-screen nodes, and wide landscape windows (>= 720 dp and
+  wider than tall) show the month grid and the selected day side by side without scrolling.
+- Verification: build/lint 0 errors, 19 warnings; 35 JVM tests; Xiaomi portrait run
+  **OK (47 tests)**. The two-pane layout has not yet been seen on the device in landscape.
+
+Next: Milestone 5 (reminders and notifications).

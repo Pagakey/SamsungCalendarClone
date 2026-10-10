@@ -10,7 +10,7 @@ it was planned, partially scaffolded, or delegated to the device calendar app.
 Current checkpoint: **process-death recovery and lifecycle-safe saves**, on top of
 repeating-event scopes, reminder controls and native details/editing, verified on Xiaomi.
 Midnight/clock-change refresh and Milestone 4 views (day, week, agenda, search) are in.
-Next: device visual check of the new views, then Milestone 5 reminders/notifications. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
+Next: Milestone 5 reminders/notifications. Advanced recurrence remains pending. See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for evidence and history.
 
 ## Project foundation
 
@@ -38,7 +38,8 @@ Next: device visual check of the new views, then Milestone 5 reminders/notificat
 - [x] Floating add button opens the native basic creation flow after permission.
 - [x] Restrained light/dark theme and system-bar insets.
 - [x] Add scrolling for short windows so all six weeks remain reachable.
-- [ ] Verify landscape, split-screen and tablet layouts on devices/emulators.
+- [x] Wide landscape windows show the month grid and the selected day side by side (narrow short windows scroll).
+- [ ] Device-check the two-pane landscape layout, split-screen and tablet sizes (portrait suite passes; the earlier landscape run predates the two-pane layout).
 - [ ] Verify large fonts, TalkBack, contrast and touch-target accessibility.
 - [x] Preserve visible month/selected date through process death (verified with a real `am kill` on Xiaomi).
 - [x] Refresh today automatically at midnight while the app stays foregrounded (also on time/zone/date-change broadcasts).
@@ -108,8 +109,9 @@ Next: device visual check of the new views, then Milestone 5 reminders/notificat
 - [x] Agenda/schedule view (8 weeks from the selected date, "Show more" up to a year).
 - [x] Search with bounded/asynchronous queries and useful empty results (provider instance search, 1 year back to 2 years ahead, debounced, 200-result cap, hidden calendars excluded in the query).
 - [x] Consistent navigation among views while preserving date and filters (shared selected date, view saved across process death).
-- [ ] Visually check week/day/agenda on the Xiaomi with fictional events (`ViewsRenderTest` captures light/dark; blocked while the phone was locked).
-- [ ] Create an event by tapping an empty time slot in Day/Week view.
+- [x] Visually check week/day/agenda on the Xiaomi with fictional events (`ViewsRenderTest` light/dark captures reviewed).
+- [x] Create an event by tapping an empty time slot in Day/Week view (half-hour slots, one-hour default, may end after midnight).
+- [ ] Narrow overlapping events in week view break titles mid-word; consider a cascading layout.
 - [ ] Optional: page the agenda beyond one year and widen search on request.
 
 ## Milestone 5 — Reminders and notifications
@@ -143,8 +145,7 @@ Next: device visual check of the new views, then Milestone 5 reminders/notificat
 - [x] Test six-week continuity across 132 months.
 - [x] Test all-day time zones, midnight-exclusive ends, DST and empty date mappings.
 - [x] Run all 35 JVM tests successfully (10 calendar-date, 4 editor-time, 5 reminder, 7 recurrence/EXDATE, 3 clock, 5 view-layout and the starter test).
-- [x] Run all 44 Xiaomi instrumented tests successfully (18 provider, 9 screen, 4 details, 10 editor, 2 saved-state and the starter test).
-- [ ] Run the 2 new `ViewsRenderTest` tests on an unlocked phone (46 total).
+- [x] Run all 47 Xiaomi instrumented tests successfully (18 provider, 9 screen, 4 details, 11 editor, 2 saved-state, 2 view-render and the starter test).
 - [x] Instrumented coverage: no-permission UI, arrows/Today, swipe, selection, light/dark rendering.
 - [x] Instrumented editor coverage: blank title, no writable calendar, all-day save payload, prefilled timestamp preservation and discard confirmation.
 - [x] Instrumented details coverage: delete confirmation/cancel, repeating-event handoff and read-only actions.

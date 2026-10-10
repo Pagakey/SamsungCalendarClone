@@ -52,6 +52,22 @@ class EventEditorTest {
             assertEquals(listOf(EventReminder(60, REMINDER_ALERT)), saved?.reminders)
         }
     }
+    @Test fun tappedLateSlotStartsThereAndEndsAfterMidnight() {
+        compose.setContent {
+            SamsungCalendarCloneTheme {
+                EventEditor(LocalDate.of(2026, 10, 10), listOf(DeviceCalendar(1, "Test calendar", "Test account", 0, true)),
+                    onDismiss = {}, onSave = { saved = it }, startAt = 23 * 60 + 30)
+            }
+        }
+        compose.onNodeWithText("23:30").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Event title").performTextInput("Late call")
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle {
+            val zone = java.time.ZoneId.systemDefault()
+            assertEquals(LocalDate.of(2026, 10, 10).atTime(23, 30).atZone(zone).toInstant().toEpochMilli(), saved?.begin)
+            assertEquals(LocalDate.of(2026, 10, 11).atTime(0, 30).atZone(zone).toInstant().toEpochMilli(), saved?.end)
+        }
+    }
     @Test fun inFlightSaveDisablesSaveAndFailuresAreShown() {
         editor(saving = true, saveError = "This event changed elsewhere. Close it and open it again.")
         compose.onNodeWithText("Saving…").assertIsNotEnabled()
@@ -60,7 +76,7 @@ class EventEditorTest {
     @Test fun savesAllDayWithExclusiveUtcEnd() {
         editor()
         compose.onNodeWithText("Event title").performTextInput("A day off")
-        compose.onNodeWithContentDescription("All day").performClick()
+        compose.onNodeWithContentDescription("All day").performScrollTo().performClick()
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle {
             assertEquals("A day off", saved?.title)
@@ -93,8 +109,8 @@ class EventEditorTest {
         editor()
         compose.onNodeWithText("Event title").performTextInput("Planning")
         compose.onNodeWithText("10 minutes before").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Remove reminder 10 minutes before").performClick()
-        compose.onNodeWithText("No reminders").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove reminder 10 minutes before").performScrollTo().performClick()
+        compose.onNodeWithText("No reminders").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Add reminder").performScrollTo().performClick()
         compose.onNodeWithText("1 hour before").performClick()
         compose.onNodeWithText("Save").performClick()
@@ -103,7 +119,7 @@ class EventEditorTest {
     @Test fun allDayNewEventDropsTimedDefaultReminder() {
         editor()
         compose.onNodeWithText("Event title").performTextInput("Holiday")
-        compose.onNodeWithContentDescription("All day").performClick()
+        compose.onNodeWithContentDescription("All day").performScrollTo().performClick()
         compose.onNodeWithText("No reminders").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle { assertEquals(emptyList<EventReminder>(), saved?.reminders) }
@@ -114,7 +130,7 @@ class EventEditorTest {
     }
     @Test fun changingOnlyAllDayRequiresDiscardConfirmation() {
         editor()
-        compose.onNodeWithContentDescription("All day").performClick()
+        compose.onNodeWithContentDescription("All day").performScrollTo().performClick()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Discard this event?").assertIsDisplayed()
         compose.onNodeWithText("Keep editing").performClick()

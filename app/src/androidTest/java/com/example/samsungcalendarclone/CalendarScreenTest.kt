@@ -41,7 +41,7 @@ class CalendarScreenTest {
         launch()
         compose.onNodeWithText("Connect").assertIsDisplayed()
         compose.onNodeWithContentDescription("Add event").assertIsDisplayed()
-        compose.onNodeWithText("Your day, at a glance").assertIsDisplayed()
+        compose.onNodeWithText("Your day, at a glance").performScrollTo().assertIsDisplayed()
         screenshot("month-light-denied.png")
         compose.onNodeWithContentDescription("Next month").performClick()
         compose.waitForIdle()
@@ -54,8 +54,8 @@ class CalendarScreenTest {
         launch(dark = true)
         val date = LocalDate.now().withDayOfMonth(15)
         val description = date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy"))
-        compose.onNodeWithContentDescription(description, substring = true).performClick().assertIsSelected()
-        compose.onNodeWithText(date.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).assertIsDisplayed()
+        compose.onNodeWithContentDescription(description, substring = true).performScrollTo().performClick().assertIsSelected()
+        compose.onNodeWithText(date.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).performScrollTo().assertIsDisplayed()
         screenshot("month-dark-denied.png")
         compose.onNodeWithText("Calendars").performClick()
         compose.onNodeWithText("Calendar access is off. You can still browse dates.").assertIsDisplayed()
@@ -65,7 +65,7 @@ class CalendarScreenTest {
         launch(saved = SavedStateHandle(mapOf("month" to "2031-02", "selected_date" to date.toEpochDay())))
         compose.onNodeWithText(date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())).assertIsDisplayed()
         compose.onNodeWithText("2031").assertIsDisplayed()
-        compose.onNodeWithText(date.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).assertIsDisplayed()
+        compose.onNodeWithText(date.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).performScrollTo().assertIsDisplayed()
     }
     @Test fun navigationIsRecordedForRestoration() {
         val saved = SavedStateHandle()
@@ -87,7 +87,7 @@ class CalendarScreenTest {
             assertEquals(tomorrow, model.state.value.today)
             assertEquals(tomorrow, model.state.value.selectedDate)
         }
-        compose.onNodeWithText(tomorrow.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).assertIsDisplayed()
+        compose.onNodeWithText(tomorrow.format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).performScrollTo().assertIsDisplayed()
     }
     @Test fun midnightKeepsAnotherSelectedDay() {
         val model = launch()
@@ -114,7 +114,7 @@ class CalendarScreenTest {
         compose.onNodeWithContentDescription("Change view", substring = true).performClick()
         compose.onNodeWithText("Month").performClick()
         compose.onNodeWithText(date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())).assertIsDisplayed()
-        compose.onNodeWithText(LocalDate.of(2031, 2, 23).format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).assertIsDisplayed()
+        compose.onNodeWithText(LocalDate.of(2031, 2, 23).format(DateTimeFormatter.ofPattern("EEEE, d MMM"))).performScrollTo().assertIsDisplayed()
     }
     @Test fun agendaAndSearchExplainMissingAccess() {
         val saved = SavedStateHandle()
